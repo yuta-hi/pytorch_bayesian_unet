@@ -28,7 +28,9 @@ def noised_softmax_cross_entropy(y, t, mc_iteration,
 
     logits, log_std = y
 
-    assert logits.shape == log_std.shape
+    assert logits.shape[0]  == log_std.shape[0]
+    assert log_std.shape[1] in (logits.shape[1], 1)
+    assert logits.shape[2:] == log_std.shape[2:]
 
     xp = cuda.get_array_module(t)
 
@@ -73,7 +75,9 @@ def noised_sigmoid_cross_entropy(y, t, mc_iteration, normalize=True, reduce='mea
 
     logits, log_std = y
 
-    assert logits.shape == log_std.shape
+    assert logits.shape[0] == log_std.shape[0]
+    assert log_std.shape[1] in (logits.shape[1], 1)
+    assert logits.shape[2:] == log_std.shape[2:]
     assert logits.shape == t.shape
 
     xp = cuda.get_array_module(t)
