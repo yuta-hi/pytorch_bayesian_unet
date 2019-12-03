@@ -1,0 +1,17 @@
+six
+pandas
+scipy
+scikit-image==0.12.3
+scikit_learn
+numpy
+opencv_python
+SimpleITK
+joblib
+tqdm
+openpyxl
+matplotlib==3.0.3
+seaborn
+tensorboardX
+cupy==6.5.0
+chainer==6.5.0
+chainerui
