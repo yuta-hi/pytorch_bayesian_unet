@@ -32,7 +32,7 @@ This is a part of following works.
 - CPU or NVIDIA GPU + CUDA CuDNN
 - Chainer 6.5
 
-## Getting Started
+## Getting started
 ### Installation
 - Install Chainer and dependencies from https://chainer.org/
 - For other requirements, see [requirements.txt](requirements.txt).
@@ -405,3 +405,7 @@ estimated_labels, predicted_variances = infer.run()
 cd recipe
 make all
 ```
+
+## Related repositories
+- [anatomy-viewer](https://github.com/yuta-hi/anatomy-viewer)
+<img src='https://github.com/yuta-hi/anatomy-viewer/blob/master/figs/demo.gif' width='600px'>
