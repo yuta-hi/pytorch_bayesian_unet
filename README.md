@@ -2,6 +2,8 @@
 
 This is Chainer implementation for Bayesian Convolutional Neural Networks.
 
+(Keras re-impremitation is also available: [keras_bayesian_unet](https://github.com/yuta-hi/keras_bayesian_unet))
+
 In this project, we assume the following two scenarios, especially for medical imaging.
 1. Two-dimensional segmentation / regression with the 2D U-Net.  (e.g., 2D x-ray, laparoscopic images, and CT slices)
 3. Three-dimensional segmentation / regression with the 3D U-Net.  (e.g., 3D CT volumes)
@@ -407,5 +409,8 @@ make all
 ```
 
 ## Related repositories
-- [anatomy-viewer](https://github.com/yuta-hi/anatomy-viewer)
+- [keras_bayesian_unet](https://github.com/yuta-hi/keras_bayesian_unet)
+
+- [anatomy_viewer](https://github.com/yuta-hi/anatomy-viewer)
 <img src='https://github.com/yuta-hi/anatomy-viewer/blob/master/figs/demo.gif' width='600px'>
+
