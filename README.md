@@ -27,6 +27,14 @@ This is a part of following works.
   year={2019 (in press)}
   doi={10.1007/s11265-019-01507-z},
 }
+
+@inproceedings{hiasa2018surgical,
+  title={Surgical tools segmentation in laparoscopic images using convolutional neural networks with uncertainty estimation and semi-supervised learning},
+  author={Hiasa, Y and Otake, Y and Nakatani, S and Harada, H and Kanaji, S and Kakeji, Y and Sato, Yoshinobu},
+  booktitle={Proc. International Conference of Computer Assisted Radiology and Surgery},
+  pages={14--15},
+  year={2018}
+}
 ```
 
 ## Requirements
