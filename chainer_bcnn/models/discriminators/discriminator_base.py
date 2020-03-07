@@ -22,7 +22,37 @@ class Block(UNetBaseBlock):
 
 
 class DiscriminatorBase(Model):
+    """ Base class of discriminator
 
+    Args:
+        ndim (int): Number of spatial dimensions.
+        nlayer (int, optional): Number of layers.
+            Defaults to 4.
+        nfilter (list or int, optional): Number of filters.
+            Defaults to 64.
+        ninner (list or int, optional): Number of layers in UNetBlock.
+            Defaults to 1.
+        conv_param (dict, optional): Hyperparameter of convolution layer.
+            Defaults to {'name':'conv', 'ksize': 3, 'stride': 1, 'pad': 1,
+             'initialW': {'name': 'he_normal', 'scale': 1.0}, 'initial_bias': {'name': 'zero'}}.
+        pool_param (dict, optional): Hyperparameter of pooling layer.
+            Defaults to {'name': 'max', 'ksize': 2, 'stride': 2}.
+        norm_param (dict or None, optional): Hyperparameter of normalization layer.
+            Defaults to {'name': 'batch'}.
+        activation_param (dict, optional): Hyperparameter of activation layer.
+            Defaults to {'name': 'relu'}.
+        dropout_param (dict or None, optional): Hyperparameter of dropout layer.
+            Defaults to {'name': 'dropout', 'ratio': .5}.
+        dropout_enables (list or tuple, optional): Set whether to apply dropout for each layer.
+            If None, apply the dropout in all layers.
+            Defaults to None.
+        residual (bool, optional): Enable the residual learning.
+            Defaults to False.
+        preserve_color (bool, optional): If True, the normalization will be discarded in the first layer.
+            Defaults to False.
+
+    See: https://arxiv.org/pdf/1406.2661.pdf
+    """
     def __init__(self,
                  ndim,
                  nlayer=4,

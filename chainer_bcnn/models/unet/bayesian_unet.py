@@ -56,8 +56,25 @@ class BayesianUNet(UNetBase):
             Defaults to {'name': 'relu'}.
         dropout_param (dict or None, optional): Hyperparameter of dropout layer.
             Defaults to {'name': 'mc_dropout', 'ratio': .5,}.
+        dropout_enables (list or tuple, optional): Set whether to apply dropout for each layer.
+            If None, apply the dropout in all layers.
+            Defaults to None.
         residual (bool, optional): Enable the residual learning.
             Defaults to False.
+        preserve_color (bool, optional): If True, the normalization will be discarded in the first layer.
+            Defaults to False.
+        exp_ninner (str, optional): Specify the number of layers in ExpansionBlock.
+            If 'same', it is set to the same value as `ninner`.
+            Defaults to 'same'.
+        exp_norm_param (str, optional): Specify the hyperparameter of normalization layer in ExpansionBlock.
+            If 'same', it is set to the same value as `norm_param`.
+            Defaults to 'same'.
+        exp_activation_param (str, optional): Specify the hyperparameter of normalization layer in ExpansionBlock.
+            If 'same', it is set to the same value as `activation_param`.
+            Defaults to 'same'.
+        exp_dropout_param (str, optional): Specify the hyperparameter of normalization layer in ExpansionBlock.
+            If 'same', it is set to the same value as `dropout_param`.
+            Defaults to 'same'.
 
     See also: ~chainer_bcnn.links.mc_sampler
               ~chainer_bcnn.functions.mc_dropout
