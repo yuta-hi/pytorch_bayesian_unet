@@ -64,6 +64,11 @@ class Classifier(link.Chain):
             :doc:`built-in evaluation functions </reference/functions>`, or
             your own evaluation function.
             The signature of the function is the same as ``lossfun``.
+        activation (callable):
+            Function that apply final activation functions to preditions.
+            You can specify one of evaluation functions from
+            :doc:`built-in activation functions </reference/functions>`, or
+            your own activation function.
         x_keys (tuple, int or str): Key to specify input variable from arguments.
             When it is ``int``, a variable in positional arguments is used.
             And when it is ``str``, a variable in keyword arguments is used.
@@ -80,6 +85,9 @@ class Classifier(link.Chain):
             See the description in the arguments for details.
         accfun (callable):
             Function that computes accuracy.
+            See the description in the arguments for details.
+        activation (callable):
+            Activation function after the predictor output.
             See the description in the arguments for details.
         x (~chainer.Variable or tuple): Inputs for the last minibatch.
         y (~chainer.Variable or tuple): Predictions for the last minibatch.
@@ -108,6 +116,7 @@ class Classifier(link.Chain):
     def __init__(self, predictor,
                  lossfun=softmax_cross_entropy.softmax_cross_entropy,
                  accfun=accuracy.accuracy,
+                 activation=None,
                  x_keys=(0), t_keys=(-1)):
 
         super(Classifier, self).__init__()
@@ -117,6 +126,8 @@ class Classifier(link.Chain):
             assert callable(lossfun), 'lossfun should be callable..'
         if accfun is not None:
             assert callable(accfun), 'accfun should be callable..'
+        if activation is not None:
+            assert callable(activation), 'activation should be callable..'
 
 
         with self.init_scope():
@@ -124,6 +135,7 @@ class Classifier(link.Chain):
 
         self.lossfun = lossfun
         self.accfun = accfun
+        self.activation = activation
 
         self.x_keys = x_keys
         self.t_keys = t_keys
@@ -165,28 +177,41 @@ class Classifier(link.Chain):
 
         self._reset()
 
+        n_args = len(args) + len(kwargs)
         x = get_values(args, kwargs, self.x_keys)
-        t = get_values(args, kwargs, self.t_keys)
+        t = get_values(args, kwargs, self.t_keys) if n_args > 1 else None
 
+        # predict, and then apply final activation
         y = self.predictor(x)
 
-        if t is not None:
+        if self.activation is not None:
+            y = self.activation(y)
 
-            if self.lossfun is not None:
-                self.loss = self.lossfun(y, t)
-                reporter.report({'loss': self.loss}, self)
-
-            if self.accfun is not None:
-                self.accuracy = self.accfun(y, t)
-                reporter.report({'accuracy': self.accuracy}, self)
-
+        # preserve
         self.x = x
         self.y = y
         self.t = t
 
+
+        # if only input `x` is exist, return the predictions
+        if t is None:
+            return y
+
+        # if ground-truth label `t` is exist, evaluate the loss and accuracy.
+        # return the loss during training, otherwise return the predictions.
+        if self.lossfun is not None:
+            self.loss = self.lossfun(y, t)
+            reporter.report({'loss': self.loss}, self)
+
+        if self.accfun is not None:
+            self.accuracy = self.accfun(y, t)
+            reporter.report({'accuracy': self.accuracy}, self)
+
         if configuration.config.train:
+
             if self.loss is None:
                 raise ValueError('loss is None..')
+
             return self.loss
 
         else:
