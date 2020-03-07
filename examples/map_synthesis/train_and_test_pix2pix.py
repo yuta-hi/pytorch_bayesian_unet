@@ -351,7 +351,7 @@ def test_phase(generator, test, args):
                                         [None, None, None, 'jet', 'jet'],
                                         [None, None, None, uncert_clim, error_clim],
                                         ['Input image\n%s' % os.path.relpath(imf, commonpath),
-                                             'Predicted label\n(DC=%.3f)' % acc_values[-1],
+                                             'Predicted label\n(MAE=%.3f)' % acc_values[-1],
                                              'Ground-truth label',
                                              'Predicted variance\n(PV=%.4f)' % uncert_values[-1],
                                              'Error'])):
