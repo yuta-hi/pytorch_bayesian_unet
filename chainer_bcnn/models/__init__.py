@@ -49,8 +49,10 @@ def _show_statistics(chain):
 
             if not hasattr(chain, 'children') or _len_children(chain) == 0:
 
+                # parameters
+                print('  '*depth, '(params)')
                 for p in chain.params():
-                    summary = ['  '*depth, '%s:' % p.name]
+                    summary = ['  '*depth + '    %s:' % p.name]
                     if p.data is not None:
                         summary.append('%.3e +- %.3e' % (xp.mean(p.data), xp.std(p.data)))
                         summary.append(p.data.shape)
@@ -59,6 +61,13 @@ def _show_statistics(chain):
                     else:
                         summary.append(None)
                     print(*summary)
+
+                # hooks
+                if len(chain.local_link_hooks) > 0:
+                    print('  '*depth, '(hooks)')
+                    for name, hook in chain.local_link_hooks.items():
+                        print('  '*depth + '    %s' % name)
+
 
     for l in chain.children():
         print(l.name)
@@ -100,6 +109,9 @@ class Model(chainer.Chain, metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-from .unet import UNetBase, UNet, BayesianUNet  # NOQA
-from .unet import UNet  # NOQA
-from .unet import BayesianUNet  # NOQA
+from .unet import UNetBase # NOQA
+from .unet import UNet # NOQA
+from .unet import BayesianUNet # NOQA
+
+from .discriminators import DiscriminatorBase # NOQA
+from .discriminators import PatchDiscriminator # NOQA

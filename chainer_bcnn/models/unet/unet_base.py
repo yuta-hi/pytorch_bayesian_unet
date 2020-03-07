@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import copy
 import warnings
+import numpy as np
 import chainer
 import chainer.functions as F
 
@@ -14,6 +15,11 @@ from ._helper import activation, _default_activation_param
 from ._helper import dropout, _default_dropout_param
 from ._helper import initializer
 from ...functions import crop
+
+
+def _n_spatial_unit(x):
+    return np.prod(x.shape[2:])
+
 
 class UNetBaseBlock(chainer.Chain):
     """ Base class of U-Net convolution blocks
@@ -58,8 +64,9 @@ class UNetBaseBlock(chainer.Chain):
             for i in range(self._ninner):
                 h = self['conv_%d' % i](h)
 
-                if self._norm_param is not None:
-                    h = self['conv_norm_%d' % i](h)
+                if self._norm_param is not None \
+                        and _n_spatial_unit(h) != 1: # NOTE: if spatial unit is 1, activations could be always
+                    h = self['conv_norm_%d' % i](h)  #        zeroed by the batch normalization
 
                 h = self._activation(h)
 
@@ -72,7 +79,8 @@ class UNetBaseBlock(chainer.Chain):
             for i in range(self._ninner):
                 h = self['conv_%d' % i](h)
 
-                if self._norm_param is not None:
+                if self._norm_param is not None \
+                        and _n_spatial_unit(h) != 1:
                     h = self['conv_norm_%d' % i](h)
 
                 if i == 0:
@@ -124,7 +132,8 @@ class UNetExpansionBlock(UNetBaseBlock):
     def __call__(self, low, high):
 
         h = self['upconv'](low)
-        if self._norm_param is not None:
+        if self._norm_param is not None \
+                and _n_spatial_unit(h) != 1:
             h = self['upconv_norm'](h)
         h = self._activation(h)
 
@@ -179,7 +188,13 @@ class UNetBase(Model):
                  norm_param=_default_norm_param,
                  activation_param=_default_activation_param,
                  dropout_param=_default_dropout_param,
+                 dropout_enables=None,
                  residual=False,
+                 preserve_color=False,
+                 exp_ninner='same',
+                 exp_norm_param='same',
+                 exp_activation_param='same',
+                 exp_dropout_param='same',
                  return_all_latent=False,
                 ):
 
@@ -203,16 +218,47 @@ class UNetBase(Model):
         self._conv_param = conv_param
         self._pool_param = pool_param
         self._upconv_param = upconv_param
+
         self._norm_param = norm_param
         self._activation_param = activation_param,
         self._dropout_param = dropout_param
 
+        if dropout_enables is None:
+            dropout_enables = [True]*nlayer
+        assert isinstance(dropout_enables, (list,tuple))
+        self._dropout_enables = dropout_enables
+
+        if exp_ninner == 'same':
+            exp_ninner = ninner
+        if isinstance(exp_ninner, int):
+            exp_ninner = [exp_ninner]*nlayer
+        assert len(exp_ninner) == nlayer
+        self._exp_ninner = exp_ninner
+
+        if exp_norm_param == 'same':
+            exp_norm_param = norm_param
+
+        if exp_activation_param == 'same':
+            exp_activation_param = activation_param
+
+        if exp_dropout_param == 'same':
+            exp_dropout_param = dropout_param
+
+        self._exp_norm_param = exp_norm_param
+        self._exp_activation_param = exp_activation_param,
+        self._exp_dropout_param = exp_dropout_param
+
         self._residual = residual
+        self._preserve_color = preserve_color
         self._return_all_latent = return_all_latent
 
         self._pool = pool(pool_param)
+
         self._activation = activation(activation_param)
         self._dropout = dropout(dropout_param)
+
+        self._exp_activation = activation(exp_activation_param)
+        self._exp_dropout = dropout(exp_dropout_param)
 
         with self.init_scope():
 
@@ -221,19 +267,26 @@ class UNetBase(Model):
 
                 self.add_link('contraction_block_%d' % i,
                             UNetContractionBlock(ndim,
-                                        nfilter[i], conv_param,
-                                        norm_param, activation_param,
-                                        ninner[i], residual))
+                                        nfilter[i],
+                                        conv_param,
+                                        None if preserve_color and i == 0 else norm_param,
+                                        activation_param,
+                                        ninner[i],
+                                        residual))
 
             # up
             for i in range(nlayer - 1):
 
                 self.add_link('expansion_block_%d' % i,
                             UNetExpansionBlock(ndim,
-                                        nfilter[i], conv_param,
-                                        nfilter[i+1], upconv_param,
-                                        norm_param, activation_param,
-                                        ninner[i], residual))
+                                        nfilter[i],
+                                        conv_param,
+                                        nfilter[i+1],
+                                        upconv_param,
+                                        exp_norm_param,
+                                        exp_activation_param,
+                                        exp_ninner[i],
+                                        residual))
 
     def forward(self, x):
 
@@ -248,7 +301,9 @@ class UNetBase(Model):
                 h = self._pool(h)
 
             h = self['contraction_block_%d' % (i)](h)
-            h = self._dropout(h)
+
+            if self._dropout_enables[i]:
+                h = self._dropout(h)
 
             stored_activations['contraction_block_%d' % (i)] = h
 
@@ -258,7 +313,9 @@ class UNetBase(Model):
             l = stored_activations['contraction_block_%d' % (i)]
 
             h = self['expansion_block_%d' % i](h, l)
-            h = self._dropout(h)
+
+            if self._dropout_enables[i]:
+                h = self._exp_dropout(h)
 
             stored_activations['expansion_block_%d' % (i)] = h
 

@@ -15,6 +15,16 @@ from ._helper import _default_activation_param
 from ._helper import _default_dropout_param
 from ...functions import crop
 
+
+def _check_dropout_param(param):
+
+    name = param['name']
+    if name == 'dropout':
+        warnings.warn('`%s` is not supported in BayesianUNet.. \
+                        Use ``mc_dropout`` instead.' % name)
+        param['name'] = 'mc_dropout'
+
+
 class BayesianUNet(UNetBase):
     """ Bayesian U-Net
 
@@ -67,14 +77,18 @@ class BayesianUNet(UNetBase):
                  norm_param=_default_norm_param,
                  activation_param=_default_activation_param,
                  dropout_param={'name': 'mc_dropout', 'ratio': .5,},
+                 dropout_enables=None,
                  residual=False,
+                 preserve_color=False,
+                 exp_ninner='same',
+                 exp_norm_param='same',
+                 exp_activation_param='same',
+                 exp_dropout_param='same',
                 ):
 
-        dropout_name = dropout_param['name']
-        if dropout_name != 'mc_dropout':
-            warnings.warn('Currently, %s is not supported in BayesianUNet.. \
-                           Use ``mc_dropout`` instead.' % dropout_name)
-            dropout_param['name'] = 'mc_dropout'
+        _check_dropout_param(dropout_param)
+        if exp_dropout_param != 'same':
+            _check_dropout_param(exp_dropout_param)
 
         return_all_latent = False
 
@@ -89,7 +103,13 @@ class BayesianUNet(UNetBase):
                                 norm_param,
                                 activation_param,
                                 dropout_param,
+                                dropout_enables,
                                 residual,
+                                preserve_color,
+                                exp_ninner,
+                                exp_norm_param,
+                                exp_activation_param,
+                                exp_dropout_param,
                                 return_all_latent)
         self._args = locals()
 
@@ -105,9 +125,10 @@ class BayesianUNet(UNetBase):
             'ksize': 3,
             'stride': 1,
             'pad': 1,
-            'nobias': False,
-            'initialW': conv_param.get('initialW'),
-            'initial_bias': conv_param.get('initial_bias'),
+            'nobias': conv_param.get('nobias', False),
+            'initialW': conv_param.get('initialW', None),
+            'initial_bias': conv_param.get('initial_bias', None),
+            'hook': conv_param.get('hook', None),
         }
 
         with self.init_scope():
@@ -122,6 +143,7 @@ class BayesianUNet(UNetBase):
                 'pad': 1,
                 'nobias': True,
                 'initialW': {'name': 'zero'},
+                'hook': conv_param.get('hook', None),
             }
 
             with self.init_scope():
