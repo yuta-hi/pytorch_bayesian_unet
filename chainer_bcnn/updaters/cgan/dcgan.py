@@ -20,6 +20,8 @@ class DCGANUpdater(CGANUpdater):
         converter (optional): Converter function to build input arrays. Defaults to `convert.concat_examples`.
         device (int, optional): Device to which the training data is sent. Negative value
             indicates the host memory (CPU). Defaults to None.
+        loss_func: Conditional loss function. `lossfun` attribute of the optimizer's target link for
+            the generator is used by default. Defaults to None.
         auto_new_epoch (bool, optional): If ``True``,
             :meth:`~chainer.Optimizer.new_epoch` of optimizers is
             automatically called when the ``is_new_epoch`` attribute of the
@@ -30,11 +32,11 @@ class DCGANUpdater(CGANUpdater):
     """
     def __init__(self, iterator, optimizer, alpha, buffer_size=0,
                     converter=convert.concat_examples,
-                    device=None, auto_new_epoch=True):
+                    device=None, loss_func=None, auto_new_epoch=True):
 
         super(DCGANUpdater, self).__init__(
             iterator, optimizer, alpha, converter,
-            device, auto_new_epoch)
+            device, loss_func, auto_new_epoch)
 
         self._buffer = ReplayBuffer(buffer_size)
         self._buffer_size = buffer_size
