@@ -436,6 +436,10 @@ make all
 ## Related repositories
 - [keras_bayesian_unet](https://github.com/yuta-hi/keras_bayesian_unet)
 
+- [remove_island](https://github.com/yuta-hi/remove-island)
+
 - [anatomy_viewer](https://github.com/yuta-hi/anatomy-viewer)
 <img src='https://github.com/yuta-hi/anatomy-viewer/blob/master/figs/demo.gif' width='600px'>
 
+- [volume_renderer](https://github.com/yuta-hi/volume-renderer)
+<img src='https://github.com/yuta-hi/volume-renderer/raw/master/figs/interactor.gif' width='600px'>
