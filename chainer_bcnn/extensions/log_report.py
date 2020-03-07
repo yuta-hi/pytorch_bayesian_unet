@@ -142,28 +142,34 @@ class LogReport(extensions.LogReport):
         # write JSON file
         self._write_json_log(self._log_json_name, entry)
 
+    def _init_trigger(self, trainer):
+        return trainer.updater.iteration == 0
+
     def __call__(self, trainer):
 
         summary = self._accumulate_observations(trainer)
-
-        # output the result
-        stats = summary.compute_mean()
-        stats_cpu = {}
-        for name, value in six.iteritems(stats):
-            stats_cpu[name] = float(value)  # copy to CPU
-
         updater = trainer.updater
-        stats_cpu['epoch'] = updater.epoch
-        stats_cpu['iteration'] = updater.iteration
-        stats_cpu['elapsed_time'] = trainer.elapsed_time
 
-        if self._postprocess is not None:
-            self._postprocess(stats_cpu)
+        if self._trigger(trainer) or \
+                self._init_trigger(trainer):
 
-        self._log.append(stats_cpu)
+            # output the result
+            stats = summary.compute_mean()
+            stats_cpu = {}
+            for name, value in six.iteritems(stats):
+                stats_cpu[name] = float(value)  # copy to CPU
 
-        # write to the log file
-        self._update(stats_cpu)
+            stats_cpu['epoch'] = updater.epoch
+            stats_cpu['iteration'] = updater.iteration
+            stats_cpu['elapsed_time'] = trainer.elapsed_time
 
-        # reset the summary for the next output
-        self._init_summary()
+            if self._postprocess is not None:
+                self._postprocess(stats_cpu)
+
+            self._log.append(stats_cpu)
+
+            # write to the log file
+            self._update(stats_cpu)
+
+            # reset the summary for the next output
+            self._init_summary()

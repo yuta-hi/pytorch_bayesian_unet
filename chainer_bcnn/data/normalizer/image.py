@@ -35,7 +35,6 @@ class Quantize(Operation):
     """
     def __init__(self, n_bit, x_min=0., x_max=1., rescale=True):
         self._args = locals()
-        self._args.pop('self')
         self._n_bit = n_bit
         self._x_min = x_min
         self._x_max = x_max
@@ -51,9 +50,6 @@ class Quantize(Operation):
                       self._x_min, self._x_max, self._rescale)
                 for x_i in x]
         return x
-
-    def summary(self):
-        return self._args
 
 
 def clip(x, param, scale=1.):
@@ -86,7 +82,6 @@ class Clip(Operation):
     """
     def __init__(self, param):
         self._args = locals()
-        self._args.pop('self')
         self._param = param
         self._ndim = 2
 
@@ -97,9 +92,6 @@ class Clip(Operation):
     def apply_core(self, x):
         x = [clip(x_i, self._param) for x_i in x]
         return x
-
-    def summary(self):
-        return self._args
 
 
 def subtract(x, param):
@@ -129,7 +121,6 @@ class Subtract(Operation):
     """
     def __init__(self, param):
         self._args = locals()
-        self._args.pop('self')
         self._param = param
         self._ndim = 2
 
@@ -140,9 +131,6 @@ class Subtract(Operation):
     def apply_core(self, x):
         x = [subtract(x_i, self._param) for x_i in x]
         return x
-
-    def summary(self):
-        return self._args
 
 
 def divide(x, param):
@@ -172,7 +160,6 @@ class Divide(Operation):
     """
     def __init__(self, param):
         self._args = locals()
-        self._args.pop('self')
         self._param = param
         self._ndim = 2
 
@@ -183,6 +170,3 @@ class Divide(Operation):
     def apply_core(self, x):
         x = [divide(x_i, self._param) for x_i in x]
         return x
-
-    def summary(self):
-        return self._args

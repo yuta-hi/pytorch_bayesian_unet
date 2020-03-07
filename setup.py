@@ -8,7 +8,7 @@ except ImportError:
 
 setup(
     name='chainer_bcnn',
-    version='1.0.0',
+    version='1.1.0',
     description='Bayesian Convolutional Neural Networks',
     long_description=open('README.md').read(),
     author='yuta-hi',

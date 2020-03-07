@@ -105,6 +105,23 @@ python examples/miccai_endovis_segmentation/train_and_test_epistemic.py --test_o
 <img src='figs/miccai_endovis_segmentation_samples.png' width='600px'>
 <img src='figs/miccai_endovis_segmentation.png' width='400px'><br>
 
+### Image synthesis with adversarial training
+
+Aerial-to-Map translation. This example focuses on how the adversarial training affects uncertainty behavior.
+This is mainly followed the previous work [P. Isola, et al.].
+In this example, the generator is replaced to Bayesian U-Net for uncertainty estimates.
+And, spectral normalization [T. Miyato et al.] is applied to the patch discriminator for stabilizing the optimization.
+
+```bash
+cd examples/map_synthesis
+python preprocess.py # download and normalize the dataset
+python train_and_test_baseline.py --out logs/baseline
+python train_and_test_pix2pix.py --out logs/pix2pix
+```
+Note that this is under construction.
+
+<img src='figs/map_synthesis_samples.png' width='600px'><br>
+
 ### Heatmap regression
 
 On going.

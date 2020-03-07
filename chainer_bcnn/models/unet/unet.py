@@ -58,7 +58,13 @@ class UNet(UNetBase):
                  norm_param=_default_norm_param,
                  activation_param=_default_activation_param,
                  dropout_param=_default_dropout_param,
+                 dropout_enables=None,
                  residual=False,
+                 preserve_color=False,
+                 exp_ninner='same',
+                 exp_norm_param='same',
+                 exp_activation_param='same',
+                 exp_dropout_param='same',
                 ):
 
         return_all_latent = False
@@ -74,7 +80,13 @@ class UNet(UNetBase):
                                 norm_param,
                                 activation_param,
                                 dropout_param,
+                                dropout_enables,
                                 residual,
+                                preserve_color,
+                                exp_ninner,
+                                exp_norm_param,
+                                exp_activation_param,
+                                exp_dropout_param,
                                 return_all_latent)
         self._args = locals()
 
@@ -85,9 +97,10 @@ class UNet(UNetBase):
             'ksize': 3,
             'stride': 1,
             'pad': 1,
-            'nobias': False,
-            'initialW': conv_param.get('initialW'),
-            'initial_bias': conv_param.get('initial_bias'),
+            'nobias': conv_param.get('nobias', False),
+            'initialW': conv_param.get('initialW', None),
+            'initial_bias': conv_param.get('initial_bias', None),
+            'hook': conv_param.get('hook', None),
         }
 
         with self.init_scope():

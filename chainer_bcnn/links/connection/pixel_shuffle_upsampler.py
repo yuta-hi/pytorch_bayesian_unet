@@ -31,7 +31,7 @@ class PixelShuffleUpsamplerND(chainer.Chain):
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        self.pad = _pair(pad)
+        self.pad = _pair(pad, self.ndim)
         self.pad_mode = pad_mode
 
         with self.init_scope():

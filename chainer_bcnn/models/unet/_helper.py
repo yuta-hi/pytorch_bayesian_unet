@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import chainer
 from chainer import initializers
+from chainer import link_hooks
 import chainer.functions as F
 import chainer.links as L
 
@@ -109,6 +110,11 @@ _supported_initializers = {
     'bilinear': BilinearUpsample,
 }
 
+_supported_link_hooks = {
+    'spectral_normalization': link_hooks.SpectralNormalization,
+    # 'weight_standardization': link_hooks.WeightStandardization,
+}
+
 # default parameters
 
 _default_conv_param = {
@@ -172,6 +178,8 @@ def _mapper(param, supported):
         return func(**param)
     elif issubclass(func, (chainer.Link, chainer.Chain)):
         return func(**param)
+    elif issubclass(func, (chainer.LinkHook)):
+        return func(**param)
     else:
         raise ValueError('unsupported class type.. <%s>' % func.__class__)
 
@@ -198,12 +206,17 @@ def norm(size, param):
     param['size'] = size
     return _mapper(param, _supported_norms)
 
+def link_hook(param):
+    """ Return a object of the link hook """
+    return _mapper(param, _supported_link_hooks)
+
 def conv(ndim, in_channels, out_channels, param):
     """ Return a object of the convolution layer """
     conv_param = copy.deepcopy(param)
 
     initialW_param = conv_param.get('initialW')
     initial_bias_param = conv_param.get('initial_bias')
+    hook_param = conv_param.pop('hook', None) # NOTE: pop
 
     if initialW_param is not None:
         initialW = initializer(initialW_param)
@@ -221,7 +234,13 @@ def conv(ndim, in_channels, out_channels, param):
     else:
         supported_convs = _supported_convs_3d
 
-    return _mapper(conv_param, supported_convs)
+    link = _mapper(conv_param, supported_convs)
+
+    if hook_param is not None:
+        hook = link_hook(hook_param)
+        link.add_hook(hook, name=hook_param['name'])
+
+    return link
 
 def upconv(ndim, in_channels, out_channels, param):
     """ Return a object of the up-convolution layer """
@@ -229,6 +248,7 @@ def upconv(ndim, in_channels, out_channels, param):
 
     initialW_param = conv_param.get('initialW')
     initial_bias_param = conv_param.get('initial_bias')
+    hook_param = conv_param.pop('hook', None) # NOTE: pop
 
     if initialW_param is not None:
         initialW = initializer(initialW_param)
@@ -246,4 +266,10 @@ def upconv(ndim, in_channels, out_channels, param):
     else:
         supported_upconvs = _supported_upconvs_3d
 
-    return _mapper(conv_param, supported_upconvs)
+    link = _mapper(conv_param, supported_upconvs)
+
+    if hook_param is not None:
+        hook = link_hook(hook_param)
+        link.add_hook(hook, name=hook_param['name'])
+
+    return link
