@@ -1,5 +1,5 @@
 import numpy as np
-from chainer_bcnn.data.augmentor import DataAugmentor, Crop2D, Flip2D, Affine2D
+from chainer_bcnn.data.augmentor import DataAugmentor, Crop2D, Flip2D, Affine2D, ResizeCrop2D
 
 import cv2
 import time
@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 
 def main():
     augmentor = DataAugmentor()
-    augmentor.add(Crop2D(size=(300, 400)))
+    augmentor.add(ResizeCrop2D(resize_size=(400, 500),
+                               crop_size=(300, 400)))
     augmentor.add(Flip2D(axis=2))
     augmentor.add(Affine2D(rotation=15.,
                            translate=(10., 10.),
