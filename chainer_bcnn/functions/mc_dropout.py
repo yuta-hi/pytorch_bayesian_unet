@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 from chainer.functions.noise.dropout import Dropout
 from chainer.utils import argument
 

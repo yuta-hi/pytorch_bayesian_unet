@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 def _pair(x, ndim=2):
     if hasattr(x, '__getitem__'):
         return x
