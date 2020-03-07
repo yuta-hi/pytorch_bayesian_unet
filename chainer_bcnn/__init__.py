@@ -10,3 +10,4 @@ from . import links # NOQA
 from . import models # NOQA
 from . import utils # NOQA
 from . import visualizer # NOQA
+from . import updaters # NOQA
