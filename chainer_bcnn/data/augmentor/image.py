@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import numpy as np
 import scipy.ndimage as ndi
+import cv2
 
 from . import Operation
 
@@ -27,7 +28,6 @@ class Flip(Operation):
     """
     def __init__(self, axis):
         self._args = locals()
-        self._args.pop('self')
         self._axis = axis
         self._ndim = 2
 
@@ -43,9 +43,6 @@ class Flip(Operation):
             if y is not None:
                 y = [flip(y_i, self._axis) for y_i in y]
         return x, y
-
-    def summary(self):
-        return self._args
 
 
 def crop(x, x_s, x_e, y_s, y_e):
@@ -65,7 +62,6 @@ class Crop(Operation):
     """
     def __init__(self, size):
         self._args = locals()
-        self._args.pop('self')
         assert(isinstance(size, (list, tuple)))
         self._size = size
         self._ndim = 2
@@ -83,10 +79,10 @@ class Crop(Operation):
         else:
             return x, y
 
-        y_s = np.random.randint(0, h - self._size[0])
-        y_e = y_s + self._size[0]
-        x_s = np.random.randint(0, w - self._size[1])
-        x_e = x_s + self._size[1]
+        x_s = np.random.randint(0, h - self._size[0] + 1)
+        x_e = x_s + self._size[0]
+        y_s = np.random.randint(0, w - self._size[1] + 1)
+        y_e = y_s + self._size[1]
 
         if x is not None:
             x = [crop(x_i, x_s, x_e, y_s, y_e) for x_i in x]
@@ -94,8 +90,63 @@ class Crop(Operation):
             y = [crop(y_i, x_s, x_e, y_s, y_e) for y_i in y]
         return x, y
 
-    def summary(self):
-        return self._args
+
+def resize(x, size, interp_order=0):
+
+    if x is None:
+        return x
+
+    if interp_order == 0:
+        interpolation = cv2.INTER_NEAREST
+    elif interp_order == 1:
+        interpolation = cv2.INTER_LINEAR
+    else:
+        interpolation = cv2.INTER_CUBIC
+
+    x = np.asarray(x).swapaxes(_channel_axis, 2) # NOTE: opencv's format
+    x = cv2.resize(x, size, interpolation=interpolation)
+    if x.ndim == 2:
+        x = x[:,:,np.newaxis]
+    x = x.swapaxes(2, _channel_axis)
+
+    return x
+
+
+class ResizeCrop(Crop):
+    """ Resize given images to the random size and,
+        crop them to the specified size at the random location.
+
+    Args:
+        resize_size (list or tuple): Resizing size
+        crop_size (list or tuple): Cropping size, which should be smaller than resizing size.
+    """
+    def __init__(self, resize_size, crop_size, interp_order=(0, 0)):
+
+        super(ResizeCrop, self).__init__(crop_size)
+
+        self._args = locals()
+
+        assert(isinstance(resize_size, (list, tuple)))
+        self._resize_size = resize_size
+
+        assert all([src >= dst for src, dst in zip(self._resize_size, self._size)]), \
+            'Cropping size should be smaller than resizing size..'
+
+        if isinstance(interp_order, int):
+            interp_order = [interp_order] * 2
+        self._interp_order = interp_order
+
+    def apply_core(self, x, y):
+
+        size = (np.random.randint(self._size[0], self._resize_size[0] + 1), \
+                np.random.randint(self._size[1], self._resize_size[1] + 1))
+
+        if x is not None:
+            x = [resize(x_i, size, self._interp_order[0]) for x_i in x]
+        if y is not None:
+            y = [resize(y_i, size, self._interp_order[1]) for y_i in y]
+
+        return super().apply_core(x, y)
 
 
 def apply_transform(x,
@@ -223,7 +274,6 @@ class Affine(Operation):
                  ):
 
         self._args = locals()
-        self._args.pop('self')
 
         if isinstance(translate, (float, int)):
             translate = [translate] * 2
@@ -293,6 +343,3 @@ class Affine(Operation):
                         fill_mode[1], cval[1], interp_order[1]) for y_i in y]
 
         return x, y
-
-    def summary(self):
-        return self._args

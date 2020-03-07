@@ -87,7 +87,22 @@ class DataAugmentor(object):
 
         for op in self._operations:
             name = op.__class__.__name__
-            ret[name] = op.summary()
+
+            if name in ret.keys():
+                cnt = 1
+                while True:
+                    _name = '%s_%d' % (name, cnt)
+                    if _name not in ret.keys(): break
+                    cnt += 1
+                name = _name
+
+            args = op.summary().copy()
+            ignore_keys = ['__class__', 'self']
+            for key in ignore_keys:
+                if key in args.keys():
+                    args.pop(key)
+
+            ret[name] = args
 
         if out is None:
             return ret
@@ -101,6 +116,8 @@ class DataAugmentor(object):
 class Operation(metaclass=ABCMeta):
     """ Base class of operations
     """
+    def __init__(self, *args, **kwargs):
+        self._args = locals()
 
     def preprocess_core(self, x):
         if x is None:
@@ -143,15 +160,16 @@ class Operation(metaclass=ABCMeta):
     def ndim(self):
         raise NotImplementedError()
 
-    @abstractmethod
     def summary(self):
-        raise NotImplementedError()
+        return self._args
 
 
 from .image import Flip as Flip2D  # NOQA
 from .image import Crop as Crop2D  # NOQA
+from .image import ResizeCrop as ResizeCrop2D  # NOQA
 from .image import Affine as Affine2D  # NOQA
 
 from .volume import Flip as Flip3D  # NOQA
 from .volume import Crop as Crop3D  # NOQA
+from .volume import ResizeCrop as ResizeCrop3D  # NOQA
 from .volume import Affine as Affine3D  # NOQA
