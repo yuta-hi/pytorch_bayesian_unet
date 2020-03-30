@@ -3,8 +3,9 @@ from __future__ import absolute_import
 import copy
 import warnings
 import numpy as np
-import chainer
-import chainer.functions as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from .. import Model
 from ._helper import conv, _default_conv_param
@@ -21,12 +22,13 @@ def _n_spatial_unit(x):
     return np.prod(x.shape[2:])
 
 
-class UNetBaseBlock(chainer.Chain):
+class UNetBaseBlock(nn.Module):
     """ Base class of U-Net convolution blocks
     """
     def __init__(self,
                  ndim,
-                 nfilter,
+                 nfilter_in,
+                 nfilter_out,
                  conv_param,
                  norm_param,
                  activation_param,
@@ -36,7 +38,8 @@ class UNetBaseBlock(chainer.Chain):
         super(UNetBaseBlock, self).__init__()
 
         self._ndim = ndim
-        self._nfilter = nfilter
+        self._nfilter_in = nfilter_in
+        self._nfilter_out = nfilter_out
 
         self._conv_param = conv_param
         self._norm_param = norm_param
@@ -47,15 +50,23 @@ class UNetBaseBlock(chainer.Chain):
 
         self._activation = activation(activation_param)
 
-        with self.init_scope():
+        for i in range(ninner):
+            self.add_module('conv_%d' % i,
+                        conv(ndim,
+                                nfilter_in if i == 0 else nfilter_out,
+                                nfilter_out,
+                                conv_param))
 
-            for i in range(ninner):
-                self.add_link('conv_%d' % i, conv(ndim, None, nfilter, conv_param))
+            if norm_param is not None:
+                self.add_module('conv_norm_%d' % i,
+                            norm(ndim,
+                                nfilter_out,
+                                norm_param))
 
-                if norm_param is not None:
-                    self.add_link('conv_norm_%d' % i, norm(nfilter, norm_param))
+    def __getitem__(self, name):
+        return getattr(self, name)
 
-    def __call__(self, x):
+    def forward(self, x):
 
         if not self._residual:
 
@@ -84,7 +95,7 @@ class UNetBaseBlock(chainer.Chain):
                     h = self['conv_norm_%d' % i](h)
 
                 if i == 0:
-                    g = F.identity(h) # TODO: order should be checked
+                    g = h # TODO: order should be checked
 
                 if i != (self._ninner - 1):
                     h = self._activation(h)
@@ -99,9 +110,11 @@ class UNetExpansionBlock(UNetBaseBlock):
 
     def __init__(self,
                  ndim,
-                 conv_nfilter,
+                 conv_nfilter_in,
+                 conv_nfilter_out,
                  conv_param,
-                 upconv_nfilter,
+                 upconv_nfilter_in,
+                 upconv_nfilter_out,
                  upconv_param,
                  norm_param,
                  activation_param,
@@ -110,7 +123,8 @@ class UNetExpansionBlock(UNetBaseBlock):
 
         super(UNetExpansionBlock, self).__init__(
                                 ndim,
-                                conv_nfilter,
+                                conv_nfilter_in,
+                                conv_nfilter_out,
                                 conv_param,
                                 norm_param,
                                 activation_param,
@@ -119,17 +133,20 @@ class UNetExpansionBlock(UNetBaseBlock):
 
         self._upconv_param = upconv_param
 
-        with self.init_scope():
+        self.add_module('upconv',
+                    upconv(ndim,
+                           upconv_nfilter_in,
+                           upconv_nfilter_out,
+                           upconv_param))
 
-            self.add_link('upconv',
-                        upconv(ndim, None, upconv_nfilter, upconv_param))
+        if norm_param is not None:
+            self.add_module('upconv_norm',
+                        norm(ndim,
+                             upconv_nfilter_out,
+                             norm_param))
 
-            if norm_param is not None:
-                self.add_link('upconv_norm',
-                            norm(upconv_nfilter, norm_param))
 
-
-    def __call__(self, low, high):
+    def forward(self, low, high):
 
         h = self['upconv'](low)
         if self._norm_param is not None \
@@ -138,9 +155,9 @@ class UNetExpansionBlock(UNetBaseBlock):
         h = self._activation(h)
 
         h = crop(h, high.shape)
-        h = F.concat([h, high], axis=1) # NOTE: fuse
+        h = torch.cat([h, high], dim=1) # NOTE: fuse
 
-        h = super().__call__(h)
+        h = super().forward(h)
 
         return h
 
@@ -150,6 +167,7 @@ class UNetBase(Model):
 
     Args:
         ndim (int): Number of spatial dimensions.
+        in_channels (int): Number of input channels.
         nlayer (int, optional): Number of layers.
             Defaults to 5.
         nfilter (list or int, optional): Number of filters.
@@ -196,6 +214,7 @@ class UNetBase(Model):
     """
     def __init__(self,
                  ndim,
+                 in_channels,
                  nlayer=5,
                  nfilter=32,
                  ninner=2,
@@ -220,6 +239,7 @@ class UNetBase(Model):
         self._args = locals()
 
         self._ndim = ndim
+        self._in_channels = in_channels
         self._nlayer = nlayer
 
         if isinstance(nfilter, int):
@@ -269,7 +289,7 @@ class UNetBase(Model):
         self._preserve_color = preserve_color
         self._return_all_latent = return_all_latent
 
-        self._pool = pool(pool_param)
+        self._pool = pool(ndim, pool_param)
 
         self._activation = activation(activation_param)
         self._dropout = dropout(dropout_param)
@@ -277,33 +297,40 @@ class UNetBase(Model):
         self._exp_activation = activation(exp_activation_param)
         self._exp_dropout = dropout(exp_dropout_param)
 
-        with self.init_scope():
+        # down
+        for i in range(nlayer):
 
-            # down
-            for i in range(nlayer):
+            self.add_module('contraction_block_%d' % i,
+                        UNetContractionBlock(ndim,
+                                    in_channels if i == 0 else nfilter[i-1],
+                                    nfilter[i],
+                                    conv_param,
+                                    None if preserve_color and i == 0 else norm_param,
+                                    activation_param,
+                                    ninner[i],
+                                    residual))
 
-                self.add_link('contraction_block_%d' % i,
-                            UNetContractionBlock(ndim,
-                                        nfilter[i],
-                                        conv_param,
-                                        None if preserve_color and i == 0 else norm_param,
-                                        activation_param,
-                                        ninner[i],
-                                        residual))
+        # up
+        for i in range(nlayer - 1):
 
-            # up
-            for i in range(nlayer - 1):
+            upconv_nfilter_in = nfilter[i+1]
+            if exp_ninner[i+1] == 0 and i != (nlayer-2):
+                upconv_nfilter_in += nfilter[i+2]
 
-                self.add_link('expansion_block_%d' % i,
-                            UNetExpansionBlock(ndim,
-                                        nfilter[i],
-                                        conv_param,
-                                        nfilter[i+1],
-                                        upconv_param,
-                                        exp_norm_param,
-                                        exp_activation_param,
-                                        exp_ninner[i],
-                                        residual))
+            upconv_nfilter_out = nfilter[i+1]
+
+            self.add_module('expansion_block_%d' % i,
+                        UNetExpansionBlock(ndim,
+                                    nfilter[i] + nfilter[i+1],
+                                    nfilter[i],
+                                    conv_param,
+                                    upconv_nfilter_in,
+                                    upconv_nfilter_out,
+                                    upconv_param,
+                                    exp_norm_param,
+                                    exp_activation_param,
+                                    exp_ninner[i],
+                                    residual))
 
     def forward(self, x):
 

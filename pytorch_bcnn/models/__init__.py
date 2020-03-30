@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-import chainer
+import torch
 from abc import ABCMeta, abstractmethod
 import json
 
@@ -12,21 +12,21 @@ def _len_children(chain):
 def _freeze_layers(chain, name=None, startwith=None, endwith=None,
                    recursive=True, verbose=False):
 
-    for l in chain.children():
+    for l_name, l in chain.named_children():
 
         flag = False
         if name is not None:
-            flag = flag or (l.name == name)
+            flag = flag or (l_name == name)
         if startwith is not None:
-            flag = flag or l.name.startswith(startwith)
+            flag = flag or l_name.startswith(startwith)
         if endwith is not None:
-            flag = flag or l.name.endswith(endwith)
+            flag = flag or l_name.endswith(endwith)
 
         if flag:
-            l = getattr(chain, l.name)
-            l.disable_update()
+            l = getattr(chain, l_name)
+            l.requires_grad_(False)
             if verbose == True:
-                print('disabled update:', l.name)
+                print('disabled update:', l_name)
 
         if recursive and hasattr(l, 'children'):
             _freeze_layers(l, name,
@@ -37,12 +37,11 @@ def _show_statistics(chain):
 
     def _show_statistics_depth(chain, depth):
 
-            xp = chain.xp
             depth += 1
 
-            for l in chain.children():
-                l = getattr(chain, l.name)
-                print('--'*depth, l.name)
+            for name, l in chain.named_children():
+                l = getattr(chain, name)
+                print('--'*depth, name)
 
                 if hasattr(l, 'children'):
                     _show_statistics_depth(l, depth)
@@ -51,29 +50,24 @@ def _show_statistics(chain):
 
                 # parameters
                 print('  '*depth, '(params)')
-                for p in chain.params():
-                    summary = ['  '*depth + '    %s:' % p.name]
+                for name, p in chain.named_parameters():
+                    summary = ['  '*depth + '    %s:' % name]
                     if p.data is not None:
-                        summary.append('%.3e +- %.3e' % (xp.mean(p.data), xp.std(p.data)))
-                        summary.append(p.data.shape)
-                        if hasattr(p.update_rule, 'enabled'):
-                            if not p.update_rule.enabled: summary.append('freeze')
+                        summary.append('%.3e +- %.3e' % ((p.data.mean()), (p.data.std())))
+                        summary.append(list(p.data.shape))
+                        if hasattr(p, 'requires_grad'):
+                            if not p.requires_grad: summary.append('freeze')
                     else:
                         summary.append(None)
                     print(*summary)
 
-                # hooks
-                if len(chain.local_link_hooks) > 0:
-                    print('  '*depth, '(hooks)')
-                    for name, hook in chain.local_link_hooks.items():
-                        print('  '*depth + '    %s' % name)
 
-
-    for l in chain.children():
-        print(l.name)
+    for name, l in chain.named_children():
+        print(name)
         _show_statistics_depth(l, depth=0)
 
-class Model(chainer.Chain, metaclass=ABCMeta):
+
+class Model(torch.nn.Module, metaclass=ABCMeta):
     """ Base class of Models (e.g., U-Net)
     """
 
@@ -87,6 +81,15 @@ class Model(chainer.Chain, metaclass=ABCMeta):
     def show_statistics(self):
         _show_statistics(self)
 
+    def count_params(self):
+        return sum(p.numel() for p in self.parameters())
+
+    def count_trainable_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def count_freezed_params(self):
+        return sum(p.numel() for p in self.parameters() if not p.requires_grad)
+
     def save_args(self, out):
         args = self._args.copy()
         ignore_keys = ['__class__', 'self']
@@ -96,6 +99,9 @@ class Model(chainer.Chain, metaclass=ABCMeta):
 
         with open(out, 'w', encoding='utf-8') as f:
             json.dump(args, f, ensure_ascii=False, indent=4)
+
+    def __getitem__(self, name):
+        return getattr(self, name)
 
     @abstractmethod
     def forward(self, x, **kwargs):

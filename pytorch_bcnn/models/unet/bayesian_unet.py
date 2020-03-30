@@ -1,8 +1,7 @@
 from __future__ import absolute_import
 
-import chainer
-import chainer.functions as F
-from chainer import reporter
+import torch.nn.functional as F
+from pytorch_trainer import reporter
 import warnings
 
 from .unet_base import UNetBase
@@ -30,6 +29,7 @@ class BayesianUNet(UNetBase):
 
     Args:
         ndim (int): Number of spatial dimensions.
+        in_channels (int): Number of input channels.
         out_channels (int): Number of output channels.
         nlayer (int, optional): Number of layers.
             Defaults to 5.
@@ -82,6 +82,7 @@ class BayesianUNet(UNetBase):
 
     def __init__(self,
                  ndim,
+                 in_channels,
                  out_channels,
                  nlayer=5,
                  nfilter=32,
@@ -93,7 +94,7 @@ class BayesianUNet(UNetBase):
                  upconv_param=_default_upconv_param,
                  norm_param=_default_norm_param,
                  activation_param=_default_activation_param,
-                 dropout_param={'name': 'mc_dropout', 'ratio': .5,},
+                 dropout_param={'name': 'mc_dropout', 'p': .5,},
                  dropout_enables=None,
                  residual=False,
                  preserve_color=False,
@@ -111,6 +112,7 @@ class BayesianUNet(UNetBase):
 
         super(BayesianUNet, self).__init__(
                                 ndim,
+                                in_channels,
                                 nlayer,
                                 nfilter,
                                 ninner,
@@ -139,32 +141,44 @@ class BayesianUNet(UNetBase):
 
         conv_out_param = {
             'name': 'conv',
-            'ksize': 3,
+            'kernel_size': 3,
             'stride': 1,
-            'pad': 1,
-            'nobias': conv_param.get('nobias', False),
+            'padding': 1,
+            'padding_mode': conv_param.get('padding_mode', 'zeros'),
+            'bias': conv_param.get('bias', True),
             'initialW': conv_param.get('initialW', None),
             'initial_bias': conv_param.get('initial_bias', None),
             'hook': conv_param.get('hook', None),
         }
 
-        with self.init_scope():
-            self.add_link('conv_out', conv(ndim, None, out_channels, conv_out_param))
+        conv_out_nfilter_in = self._nfilter[0]
+        if self._exp_ninner[0] == 0:
+            conv_out_nfilter_in += self._nfilter[1]
+
+        self.add_module('conv_out',
+                    conv(ndim,
+                         conv_out_nfilter_in,
+                         out_channels,
+                         conv_out_param))
 
 
         if sigma:
             conv_sigma_param = {
                 'name': 'conv',
-                'ksize': 3,
+                'kernel_size': 3,
                 'stride': 1,
-                'pad': 1,
-                'nobias': True,
+                'padding': 1,
+                'padding_mode': conv_param.get('padding_mode', 'zeros'),
+                'bias': False,
                 'initialW': {'name': 'zero'},
                 'hook': conv_param.get('hook', None),
             }
 
-            with self.init_scope():
-                self.add_link('conv_sigma', conv(ndim, None, sigma_channels, conv_sigma_param))
+            self.add_module('conv_sigma',
+                        conv(ndim,
+                             conv_out_nfilter_in,
+                             sigma_channels,
+                             conv_sigma_param))
 
     def forward(self, x):
 
@@ -179,6 +193,6 @@ class BayesianUNet(UNetBase):
         sigma = self['conv_sigma'](h)
         sigma = crop(sigma, x.shape)
 
-        reporter.report({'sigma': F.mean(sigma)}, self)
+        reporter.report({'sigma': torch.mean(sigma)}, self)
 
         return out, sigma
