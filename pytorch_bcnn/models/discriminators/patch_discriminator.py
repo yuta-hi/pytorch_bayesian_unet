@@ -14,6 +14,8 @@ class PatchDiscriminator(DiscriminatorBase):
 
     Args:
         ndim (int): Number of spatial dimensions.
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
         nlayer (int, optional): Number of layers.
             Defaults to 4.
         nfilter (list or int, optional): Number of filters.
@@ -43,6 +45,7 @@ class PatchDiscriminator(DiscriminatorBase):
     """
     def __init__(self,
                  ndim,
+                 in_channels,
                  out_channels,
                  nlayer=4,
                  nfilter=64,
@@ -59,6 +62,7 @@ class PatchDiscriminator(DiscriminatorBase):
 
         super(PatchDiscriminator, self).__init__(
                                 ndim,
+                                in_channels,
                                 nlayer,
                                 nfilter,
                                 ninner,
@@ -76,18 +80,21 @@ class PatchDiscriminator(DiscriminatorBase):
 
         conv_out_param = {
             'name': 'conv',
-            'ksize': 3,
+            'kernel_size': 3,
             'stride': 1,
-            'pad': 1,
-            'nobias': conv_param.get('nobias', False),
+            'padding': 1,
+            'padding_mode': conv_param.get('padding_mode', 'zeros'),
+            'bias': conv_param.get('bias', True),
             'initialW': conv_param.get('initialW', None),
             'initial_bias': conv_param.get('initial_bias', None),
             'hook': conv_param.get('hook', None),
         }
 
-        with self.init_scope():
-            self.add_link('conv_out', conv(ndim, None, out_channels, conv_out_param))
-
+        self.add_module('conv_out',
+                    conv(ndim,
+                         self._nfilter[-1],
+                         out_channels,
+                         conv_out_param))
 
     def forward(self, x):
 

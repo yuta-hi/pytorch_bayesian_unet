@@ -2,8 +2,9 @@ from __future__ import absolute_import
 
 import copy
 import warnings
-import chainer
-import chainer.functions as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from .. import Model
 from ..unet.unet_base import UNetBaseBlock
@@ -26,6 +27,7 @@ class DiscriminatorBase(Model):
 
     Args:
         ndim (int): Number of spatial dimensions.
+        in_channels (int): Number of input channels.
         nlayer (int, optional): Number of layers.
             Defaults to 4.
         nfilter (list or int, optional): Number of filters.
@@ -55,6 +57,7 @@ class DiscriminatorBase(Model):
     """
     def __init__(self,
                  ndim,
+                 in_channels,
                  nlayer=4,
                  nfilter=64,
                  ninner=1,
@@ -99,23 +102,22 @@ class DiscriminatorBase(Model):
         self._residual = residual
         self._preserve_color = preserve_color
 
-        self._pool = pool(pool_param)
+        self._pool = pool(ndim, pool_param)
         self._activation = activation(activation_param)
         self._dropout = dropout(dropout_param)
 
-        with self.init_scope():
+        # down
+        for i in range(nlayer):
 
-            # down
-            for i in range(nlayer):
-
-                self.add_link('block_%d' % i,
-                            Block(ndim,
-                                  nfilter[i],
-                                  conv_param,
-                                  None if preserve_color and i == 0 else norm_param,
-                                  activation_param,
-                                  ninner[i],
-                                  residual))
+            self.add_module('block_%d' % i,
+                        Block(ndim,
+                            in_channels if i == 0 else nfilter[i-1],
+                            nfilter[i],
+                            conv_param,
+                            None if preserve_color and i == 0 else norm_param,
+                            activation_param,
+                            ninner[i],
+                            residual))
 
     def forward(self, x):
 
