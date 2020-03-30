@@ -1,5 +1,5 @@
-from chainer_bcnn.data import load_image, save_image
-from chainer_bcnn.datasets import ImageDataset, VolumeDataset
+from pytorch_bcnn.data import load_image, save_image
+from pytorch_bcnn.datasets import ImageDataset, VolumeDataset
 import numpy as np
 from collections import OrderedDict
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ class_list = ['background', 'pelvis', 'femur', 'adductor_muscles',
 
 dtypes = OrderedDict({
     'image': np.float32,
-    'label': np.int32,
+    'label': np.int64,
     'mask' : np.uint8,
 })
 

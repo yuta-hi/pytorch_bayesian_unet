@@ -1,5 +1,5 @@
 import numpy as np
-from chainer_bcnn.data.normalizer import Normalizer, Quantize2D, Clip2D, Subtract2D, Divide2D
+from pytorch_bcnn.data.normalizer import Normalizer, Quantize2D, Clip2D, Subtract2D, Divide2D
 
 import cv2
 import time

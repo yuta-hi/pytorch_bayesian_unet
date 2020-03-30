@@ -1,10 +1,12 @@
 import numpy as np
-import chainer
-from chainer.dataset import DatasetMixin
-from chainer.iterators import SerialIterator
-from chainer_bcnn.models import BayesianUNet
-from chainer_bcnn.links import MCSampler
-from chainer_bcnn.inference import Inferencer
+import torch
+from pytorch_trainer.iterators import SerialIterator
+from pytorch_bcnn.models import UNet, BayesianUNet
+from pytorch_bcnn.links import MCSampler
+from pytorch_bcnn.inference import Inferencer
+
+from pytorch_trainer.dataset import DatasetMixin
+from pytorch_trainer.dataset import convert_to_tensor
 
 
 class Dataset(DatasetMixin):
@@ -17,11 +19,12 @@ class Dataset(DatasetMixin):
     def __len__(self):
         return self._n_samples
 
+    @convert_to_tensor
     def get_example(self, i):
         return np.random.rand(*self._shape).astype(self._dtype)
 
 
-def test(predictor, shape, batch_size, gpu, to_cpu):
+def test(predictor, shape, batch_size, gpu, to_numpy):
 
     print('------')
 
@@ -29,14 +32,14 @@ def test(predictor, shape, batch_size, gpu, to_cpu):
     dataset = Dataset(n_samples, shape)
 
     model = MCSampler(predictor, mc_iteration=5)
+    model.eval()
 
-    if gpu >= 0:
-        chainer.backends.cuda.get_device_from_id(gpu).use()
-        model.to_gpu()
+    device = torch.device(gpu)
+    model.to(device)
 
     iterator = SerialIterator(dataset, batch_size, repeat=False)
 
-    infer = Inferencer(iterator, model, device=gpu, to_cpu=to_cpu)
+    infer = Inferencer(iterator, model, device=gpu, to_numpy=to_numpy)
 
     ret = infer.run()
 
@@ -50,17 +53,17 @@ def test(predictor, shape, batch_size, gpu, to_cpu):
 
 
 def main():
-    test(BayesianUNet(ndim=2, out_channels=5),
+    test(BayesianUNet(ndim=2, in_channels=1, out_channels=5),
          (1, 200, 300),
          batch_size=2,
-         gpu=0,
-         to_cpu=True)
+         gpu='cuda',
+         to_numpy=True)
 
-    test(BayesianUNet(ndim=3, out_channels=5, nlayer=3),
+    test(BayesianUNet(ndim=3, in_channels=1, out_channels=5, nlayer=3),
          (1, 64, 64, 64),
          batch_size=2,
-         gpu=0,
-         to_cpu=True)
+         gpu='cuda',
+         to_numpy=True)
 
 
 if __name__ == '__main__':

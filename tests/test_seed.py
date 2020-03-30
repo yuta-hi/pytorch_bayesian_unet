@@ -1,27 +1,33 @@
-from chainer_bcnn.utils import fixed_seed
+from pytorch_bcnn.utils import fixed_seed
 
 
 def main():
     import random
     import numpy as np
-    import cupy as cp
-    import chainer
+    import torch
+    import torch.nn as nn
 
     print(np.random.rand(10))
-    print(cp.random.rand(10))
     print(random.random())
-    print(chainer.links.Convolution2D(2, 2, 3, 1, 0).W.data)
-    print(chainer.config.cudnn_deterministic)
+    print(nn.Conv2d(2, 2, 3, 1, 0).weight.data)
+    print(torch.backends.cudnn.deterministic)
+    print(torch.backends.cudnn.benchmark)
 
     print('------')
 
     with fixed_seed(0, True):
         print(np.random.rand(10))
-        print(cp.random.rand(10))
         print(random.random())
-        print(chainer.links.Convolution2D(2, 2, 3, 1, 0).W.data)
-        print(chainer.config.cudnn_deterministic)
+        print(nn.Conv2d(2, 2, 3, 1, 0).weight.data)
+        print(torch.backends.cudnn.deterministic)
+        print(torch.backends.cudnn.benchmark)
 
+    print(np.random.rand(10))
+    print(random.random())
+    print(nn.Conv2d(2, 2, 3, 1, 0).weight.data)
+
+    print(torch.backends.cudnn.deterministic)
+    print(torch.backends.cudnn.benchmark)
 
 if __name__ == '__main__':
     main()
