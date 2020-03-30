@@ -12,7 +12,7 @@ _reduce_table = {
 def _check_type_forward(x, t):
     assert x.shape == t.shape, 'x.shape != t.shape..'
 
-def sigmoid_soft_cross_entropy(x, t, normalize=True, reduce='mean'):
+def sigmoid_cross_entropy(x, t, normalize=True, reduce='mean'):
 
     _check_type_forward(x, t)
 

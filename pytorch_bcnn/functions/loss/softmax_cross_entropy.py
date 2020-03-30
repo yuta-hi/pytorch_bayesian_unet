@@ -10,16 +10,19 @@ _reduce_table = {
 }
 
 def _check_type_forward(x, t):
-    assert x.shape == t.shape, 'x.shape != t.shape..'
+    assert t.dim() == x.dim() - 1, 't.dim() != x.dim() - 1..'
+    assert x.shape[0] == t.shape[0], 'x.shape[0] != t.shape[0]..'
+    assert x.shape[2:] == t.shape[1:], 'x.shape[2:] != t.shape[1:]..'
 
-def sigmoid_soft_cross_entropy(x, t, normalize=True, reduce='mean'):
+def softmax_cross_entropy(x, t, normalize=True, class_weight=None,
+        ignore_label=-1, reduce='mean'):
 
     _check_type_forward(x, t)
 
     _reduce = _reduce_table[reduce]
 
-    log1p_exp = torch.log1p(torch.exp(x))
-    loss = t * (log1p_exp - x) + (1 - t) * log1p_exp
+    log_p = F.log_softmax(x, dim=1)
+    loss = F.nll_loss(log_p, t, class_weight, None, ignore_label, None, _reduce)
 
     if _reduce == 'sum':
         if normalize:

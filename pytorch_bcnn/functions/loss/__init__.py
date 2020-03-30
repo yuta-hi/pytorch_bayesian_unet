@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+from .softmax_cross_entropy import softmax_cross_entropy  # NOQA
+from .sigmoid_cross_entropy import sigmoid_cross_entropy  # NOQA
 from .sigmoid_soft_cross_entropy import sigmoid_soft_cross_entropy  # NOQA
 
 from .noised_mean_squared_error import noised_mean_squared_error  # NOQA

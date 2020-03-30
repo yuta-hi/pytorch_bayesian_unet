@@ -1,16 +1,18 @@
 from __future__ import absolute_import
 
-from chainer import backends
+import torch
 
-def to_onehot(t, n_class, dtype=None):
+def to_onehot(t, n_class):
 
-    xp = backends.cuda.get_array_module(t)
+    dtype = t.dtype
+    device = t.device
 
-    if dtype is None:
-        dtype = t.dtype
+    t_onehot = torch.eye(n_class, dtype=dtype, device=device)[t]
 
-    t_onehot = xp.eye(n_class)[t]
-    t_onehot = xp.rollaxis(t_onehot, axis=-1, start=1)
-    t_onehot = t_onehot.astype(dtype)
+    axes = tuple(range(t_onehot.dim()))
+    axes = (axes[0], axes[-1],) + axes[1:-1]
 
-    return t_onehot
+    return t_onehot.permute(axes).contiguous()
+
+
+
