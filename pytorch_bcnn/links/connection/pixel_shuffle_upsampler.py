@@ -1,16 +1,11 @@
 from __future__ import absolute_import
 
-import chainer
-import chainer.functions as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from .convolution import ConvolutionND
 
-def _pair(x, ndim=2):
-    if hasattr(x, '__getitem__'):
-        return x
-    return [x]*ndim
-
-class PixelShuffleUpsamplerND(chainer.Chain):
+class PixelShuffleUpsampler2D(nn.Conv2d):
     """Pixel Shuffler for the super resolution.
     This upsampler is effective upsampling method compared with the deconvolution.
     The deconvolution has a problem of the checkerboard artifact.
@@ -20,30 +15,41 @@ class PixelShuffleUpsamplerND(chainer.Chain):
     See also:
         https://arxiv.org/abs/1609.05158
     """
+    ndim = 2
 
-    def __init__(self, ndim, in_channels, out_channels, resolution,
-                 ksize=None, stride=1, pad=0, pad_mode='reflect', nobias=False,
-                 initialW=None, initial_bias=None):
-        super(PixelShuffleUpsamplerND, self).__init__()
+    def __init__(self, in_channels, out_channels, resolution, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 bias=True, padding_mode='zeros'):
 
-        self.ndim = ndim
+        m = resolution ** self.ndim
+
+        super(PixelShuffleUpsampler2D, self).__init__(
+            in_channels, out_channels * m, kernel_size, stride,
+            padding, dilation, groups, bias, padding_mode)
+
         self.resolution = resolution
-        self.in_channels = in_channels
         self.out_channels = out_channels
 
-        self.pad = _pair(pad, self.ndim)
-        self.pad_mode = pad_mode
+    def extra_repr(self):
+        s = ('{in_channels}, {out_channels}, resolution={resolution}'
+             ', kernel_size={kernel_size}, stride={stride}')
+        if self.padding != (0,) * len(self.padding):
+            s += ', padding={padding}'
+        if self.dilation != (1,) * len(self.dilation):
+            s += ', dilation={dilation}'
+        if self.output_padding != (0,) * len(self.output_padding):
+            s += ', output_padding={output_padding}'
+        if self.groups != 1:
+            s += ', groups={groups}'
+        if self.bias is None:
+            s += ', bias=False'
+        if self.padding_mode != 'zeros':
+            s += ', padding_mode={padding_mode}'
+        return s.format(**self.__dict__)
 
-        with self.init_scope():
-            m = self.resolution ** self.ndim
-            self.conv = ConvolutionND(
-                            ndim, in_channels, out_channels * m,
-                            ksize, stride, self.pad, self.pad_mode, nobias,
-                            initialW, initial_bias)
-
-    def __call__(self, x):
+    def forward(self, x):
         r = self.resolution
-        out = self.conv(x)
+        out = super().forward(x)
         batchsize = out.shape[0]
         in_channels = out.shape[1]
         out_channels = self.out_channels
@@ -52,9 +58,9 @@ class PixelShuffleUpsamplerND(chainer.Chain):
         out_shape = tuple(s * r for s in in_shape)
 
         r_tuple = tuple(self.resolution for _ in range(self.ndim))
-        out = F.reshape(out, (batchsize, out_channels,) + r_tuple + in_shape)
-        out = F.transpose(out, self.make_transpose_indices())
-        out = F.reshape(out, (batchsize, out_channels, ) + out_shape)
+        out = out.view((batchsize, out_channels,) + r_tuple + in_shape)
+        out = out.permute(self.make_transpose_indices()).contiguous()
+        out = out.view((batchsize, out_channels, ) + out_shape)
         return out
 
     def make_transpose_indices(self):
@@ -63,24 +69,67 @@ class PixelShuffleUpsamplerND(chainer.Chain):
         si.extend([2 * (i + 1) for i in range(self.ndim)])
         return si
 
-class PixelShuffleUpsampler2D(PixelShuffleUpsamplerND):
 
-    def __init__(self, in_channels, out_channels, resolution,
-                 ksize=None, stride=1, pad=0, pad_mode='reflect', nobias=False,
-                 initialW=None, initial_bias=None):
+class PixelShuffleUpsampler3D(nn.Conv3d):
+    """Pixel Shuffler for the super resolution.
+    This upsampler is effective upsampling method compared with the deconvolution.
+    The deconvolution has a problem of the checkerboard artifact.
+    A detail of this problem shows the following.
+    http://distill.pub/2016/deconv-checkerboard/
 
-        super(PixelShuffleUpsampler2D, self).__init__(
-            2, in_channels, out_channels, resolution,
-            ksize, stride, pad, pad_mode, nobias,
-            initialW, initial_bias)
+    See also:
+        https://arxiv.org/abs/1609.05158
+    """
+    ndim = 3
 
-class PixelShuffleUpsampler3D(PixelShuffleUpsamplerND):
+    def __init__(self, in_channels, out_channels, resolution, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 bias=True, padding_mode='zeros'):
 
-    def __init__(self, in_channels, out_channels, resolution,
-                 ksize=None, stride=1, pad=0, pad_mode='reflect', nobias=False,
-                 initialW=None, initial_bias=None):
+        m = resolution ** self.ndim
 
         super(PixelShuffleUpsampler3D, self).__init__(
-            3, in_channels, out_channels, resolution,
-            ksize, stride, pad, pad_mode, nobias,
-            initialW, initial_bias)
+            in_channels, out_channels * m, kernel_size, stride,
+            padding, dilation, groups, bias, padding_mode)
+
+        self.resolution = resolution
+        self.out_channels = out_channels
+
+    def extra_repr(self):
+        s = ('{in_channels}, {out_channels}, resolution={resolution}'
+             ', kernel_size={kernel_size}, stride={stride}')
+        if self.padding != (0,) * len(self.padding):
+            s += ', padding={padding}'
+        if self.dilation != (1,) * len(self.dilation):
+            s += ', dilation={dilation}'
+        if self.output_padding != (0,) * len(self.output_padding):
+            s += ', output_padding={output_padding}'
+        if self.groups != 1:
+            s += ', groups={groups}'
+        if self.bias is None:
+            s += ', bias=False'
+        if self.padding_mode != 'zeros':
+            s += ', padding_mode={padding_mode}'
+        return s.format(**self.__dict__)
+
+    def forward(self, x):
+        r = self.resolution
+        out = super().forward(x)
+        batchsize = out.shape[0]
+        in_channels = out.shape[1]
+        out_channels = self.out_channels
+
+        in_shape = out.shape[2:]
+        out_shape = tuple(s * r for s in in_shape)
+
+        r_tuple = tuple(self.resolution for _ in range(self.ndim))
+        out = out.view((batchsize, out_channels,) + r_tuple + in_shape)
+        out = out.permute(self.make_transpose_indices()).contiguous()
+        out = out.view((batchsize, out_channels, ) + out_shape)
+        return out
+
+    def make_transpose_indices(self):
+        si = [0, 1]
+        si.extend([2 * (i + 1) + 1 for i in range(self.ndim)])
+        si.extend([2 * (i + 1) for i in range(self.ndim)])
+        return si
