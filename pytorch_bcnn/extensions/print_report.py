@@ -2,9 +2,9 @@ from __future__ import absolute_import
 
 import os
 import sys
-from chainer.training import extensions
-from chainer.training.extensions import log_report as log_report_module
-from chainer.training.extensions import util
+from pytorch_trainer.training import extensions
+from pytorch_trainer.training.extensions import log_report as log_report_module
+from pytorch_trainer.training.extensions import util
 
 
 class PrintReport(extensions.PrintReport):

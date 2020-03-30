@@ -3,7 +3,7 @@ from __future__ import absolute_import
 import json
 import os
 import six
-from chainer.training import extensions
+from pytorch_trainer.training import extensions
 
 
 class LogReport(extensions.LogReport):

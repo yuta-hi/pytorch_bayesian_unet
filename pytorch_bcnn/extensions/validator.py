@@ -6,11 +6,10 @@ import copy
 import tqdm
 import warnings
 import numpy as np
-from chainer import function
-from chainer import configuration
-from chainer.dataset import convert
-from chainer import reporter as reporter_module
-from chainer.training.extensions import Evaluator
+import torch
+from pytorch_trainer.dataset import convert
+from pytorch_trainer import reporter as reporter_module
+from pytorch_trainer.training.extensions import Evaluator
 
 from ..visualizer import Visualizer
 from ..visualizer import ImageVisualizer
@@ -134,6 +133,9 @@ class Validator(Evaluator):
         iterator = self._iterators['main']
         eval_func = self.eval_func or self._targets['main']
 
+        for target in self._targets.values():
+            target.eval()
+
         if self.eval_hook:
             self.eval_hook(self)
 
@@ -155,7 +157,7 @@ class Validator(Evaluator):
             with reporter_module.report_scope(observation):
                 in_arrays = self.converter(batch, self.device)
 
-                with function.no_backprop_mode():
+                with torch.no_grad():
                     if isinstance(in_arrays, tuple):
                         eval_func(*in_arrays)
                     elif isinstance(in_arrays, dict):
@@ -199,12 +201,11 @@ class Validator(Evaluator):
             prefix = ''
         for name, target in six.iteritems(self._targets):
             reporter.add_observer(prefix + name, target)
-            reporter.add_observers(prefix + name,
-                                   target.namedlinks(skipself=True))
+            reporter.add_observers(prefix + name + '/',
+                                   target.named_children())
 
         with reporter:
-            with configuration.using_config('train', False):
-                result = self.evaluate(trainer)
+            result = self.evaluate(trainer)
 
         reporter_module.report(result)
 
