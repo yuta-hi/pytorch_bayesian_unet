@@ -1,14 +1,14 @@
 from __future__ import absolute_import
 
 import numpy as np
-import cupy
-import chainer
-from chainer import cuda
-from chainer.dataset import convert
-from chainer.dataset import iterator as iterator_module
-from chainer import reporter as reporter_module
-from chainer import configuration
-from chainer import function
+
+import torch
+from pytorch_trainer.dataset import convert
+from pytorch_trainer.dataset import iterator as iterator_module
+from pytorch_trainer import iterators
+from pytorch_trainer import reporter as reporter_module
+from pytorch_trainer.training import extension
+
 import copy
 import six
 import tqdm
@@ -20,11 +20,11 @@ def _concat_arrays(arrays):
     """Concat CPU and GPU array
 
     Args:
-        arrays (numpy.array or cupy.array): CPU or GPU array
+        arrays (numpy.array or torch.Tensor): CPU or GPU array
     """
-    # cupy
-    if isinstance(arrays[0], cupy.ndarray):
-        return cupy.concatenate(arrays)
+    # torch
+    if isinstance(arrays[0], torch.Tensor):
+        return torch.cat(arrays)
 
     # numpy
     if not isinstance(arrays[0], np.ndarray):
@@ -66,36 +66,35 @@ def _split_predictions(pred):
         return _concat_arrays(pred)
 
 
-def _variable_to_array(var, to_cpu=True):
+def _variable_to_array(var, to_numpy=True):
 
     if isinstance(var, (tuple, list)):
-        array = [v.data if isinstance(v, chainer.Variable) else v for v in var]
-        if to_cpu:
-            array = [cuda.to_cpu(v) for v in array]
+        array = var
+
+        if to_numpy:
+            array = [v.detach().cpu().numpy() for v in array]
 
         return tuple(array)
 
     elif isinstance(var, dict):
         array = {}
         for key, v in var.items():
-            arr = v.data if isinstance(v, chainer.Variable) else v
-            if to_cpu:
-                arr = cuda.to_cpu(arr)
-            array[key] = arr
+            if to_numpy:
+                v = v.detach().cpu().numpy()
+            array[key] = v
 
         return array
     else:
         array = var
-        if isinstance(array, chainer.Variable):
-            array = array.data
-        if to_cpu:
-            array = cuda.to_cpu(array)
+
+        if to_numpy:
+            array = array.detach().cpu().numpy()
 
         return array
 
 
 class Inferencer(object):
-    """ The inferencing loop for Chainer.
+    """ The inferencing loop for PyTorch.
 
     Args:
         iterator: Dataset iterator for the training dataset. It can also be a
@@ -112,12 +111,15 @@ class Inferencer(object):
             by default.
         device (int, optional): Device to which the training data is sent. Negative value
             indicates the host memory (CPU). Defaults to None.
-        to_cpu (bool, optional): Allow the Cupy's output tensor to be converted to Numpy. Defaults to True.
+        to_numpy (bool, optional): Allow the PyTorch's output tensor to be converted to Numpy. Defaults to True.
     """
 
     def __init__(self, iterator, model,
                  converter=convert.concat_examples,
-                 device=None, to_cpu=True):
+                 device=None, to_numpy=True):
+
+        if device is not None:
+            device = torch.device(device)
 
         if isinstance(iterator, iterator_module.Iterator):
             iterator = {'main': iterator}
@@ -132,12 +134,12 @@ class Inferencer(object):
         for name, target in six.iteritems(self._model):
             reporter.add_observer(name, target)
             reporter.add_observers(
-                name, target.namedlinks(skipself=True))
+                name + '/', target.named_children())
         self.reporter = reporter
 
         self.converter = converter
         self.device = device
-        self.to_cpu = to_cpu
+        self.to_numpy = to_numpy
 
     def get_model(self, name):
         return self._model[name]
@@ -152,17 +154,18 @@ class Inferencer(object):
     def predict_core(self, model, batch):
         in_arrays = self.converter(batch, self.device)
 
-        with function.no_backprop_mode():
-            with configuration.using_config('train', False):
+        for m in self._model.values():
+            m.eval()
 
-                if isinstance(in_arrays, tuple):
-                    y = model(*in_arrays)
-                elif isinstance(in_arrays, dict):
-                    y = model(**in_arrays)
-                else:
-                    y = model(in_arrays)
+        with torch.no_grad():
+            if isinstance(in_arrays, tuple):
+                y = model(*in_arrays)
+            elif isinstance(in_arrays, dict):
+                y = model(**in_arrays)
+            else:
+                y = model(in_arrays)
 
-        return _variable_to_array(y, to_cpu=self.to_cpu)
+        return _variable_to_array(y, to_numpy=self.to_numpy)
 
     def finalize(self):
         for iterator in six.itervalues(self._iterators):
