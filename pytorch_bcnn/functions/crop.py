@@ -1,5 +1,17 @@
 from __future__ import absolute_import
 
+def contiguous(func):
+
+    def wrap(*args, **kwards):
+
+        ret = func(*args, **kwards)
+
+        return ret.contiguous()
+
+    return wrap
+
+
+@contiguous
 def crop_2d(x, shape):
     left = (x.shape[2] - shape[2]) // 2
     top  = (x.shape[3] - shape[3]) // 2
@@ -12,6 +24,8 @@ def crop_2d(x, shape):
             x.shape, shape, left, right, top, bottom)
     return x[:, :, left:right, top:bottom]
 
+
+@contiguous
 def crop_3d(x, shape):
     left = (x.shape[2] - shape[2]) // 2
     top  = (x.shape[3] - shape[3]) // 2
@@ -26,6 +40,8 @@ def crop_3d(x, shape):
             x.shape, shape, left, right, top, bottom, near, far)
     return x[:, :, left:right, top:bottom, near:far]
 
+
+@contiguous
 def crop_nd(x, shape):
     slices = [slice(0, x.shape[0]), slice(0, x.shape[1])]
     for n in range(2, x.ndim):
@@ -37,6 +53,7 @@ def crop_nd(x, shape):
                 n, x.shape, start, end)
         slices.append(slice(start, end))
     return x[tuple(slices)]
+
 
 def crop(x, shape, ndim=None):
     """ Spatial cropping x by given shape
@@ -52,7 +69,7 @@ def crop(x, shape, ndim=None):
     """
 
     if ndim is None:
-        ndim = x.ndim - 2
+        ndim = x.dim() - 2
 
     if len(shape) == ndim:
         shape = (None, None, ) + tuple(shape)
