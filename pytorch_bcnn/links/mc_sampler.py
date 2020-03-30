@@ -5,17 +5,17 @@ import warnings
 from functools import partial
 from itertools import starmap
 from itertools import chain
-import chainer
-import chainer.functions as F
-from chainer import configuration
-from chainer import link
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from .classifier import get_values
 
 def _concat_variables(arrays):
 
-    return F.concat([array[None] \
-                        for array in arrays], axis=0)
+    return torch.cat([array[None] \
+                        for array in arrays], dim=0)
 
 def _concat_samples(samples):
 
@@ -38,13 +38,12 @@ def _predict(samples, mode='variance',
                       reduce_mean=None, reduce_var=None,
                       eps=1e-8):
 
-    mean = F.mean(samples, axis=0)
+    mean = torch.mean(samples, dim=0)
 
     if mode == 'variance':
-        var = samples - mean
-        var = F.mean(F.square(var), axis=0)
+        var = torch.var(samples, dim=0)
     elif mode == 'entropy':
-        var = - mean * F.log2(mean + eps)
+        var = - mean * torch.log2(mean + eps)
     else:
         raise NotImplementedError('unsupported mode..')
 
@@ -57,7 +56,7 @@ def _predict(samples, mode='variance',
     return mean, var
 
 
-class MCSampler(link.Chain):
+class MCSampler(nn.Module):
     """ Monte Carlo estimation to approximate the predictive distribution.
     Predictive variance is a metric indicating uncertainty.
 
@@ -83,9 +82,9 @@ class MCSampler(link.Chain):
     def __init__(self,
                  predictor,
                  mc_iteration,
-                 activation=partial(F.softmax, axis=1),
-                 reduce_mean=partial(F.argmax, axis=1),
-                 reduce_var=partial(F.mean, axis=1),
+                 activation=partial(torch.softmax, dim=1),
+                 reduce_mean=partial(torch.argmax, dim=1),
+                 reduce_var=partial(torch.mean, dim=1),
                  mode='variance',
                  eps=1e-8,
                  x_keys=(0),
@@ -94,8 +93,7 @@ class MCSampler(link.Chain):
 
         assert callable(predictor), 'predictor should be callable..'
 
-        with self.init_scope():
-            self.predictor = predictor
+        self.add_module('predictor', predictor)
 
         self.activation = activation
         self.mc_iteration = mc_iteration
@@ -109,7 +107,7 @@ class MCSampler(link.Chain):
 
     def forward(self, *args, **kwargs):
 
-        if configuration.config.train:
+        if self.training:
             warnings.warn('During the training phase, MCMC sampling is not executed..')
             return self.predictor(*args, **kwargs)
 

@@ -1,11 +1,6 @@
 from __future__ import absolute_import
 
-import chainer
-from chainer import configuration
-from chainer.functions.loss import mean_squared_error
-from chainer.functions.loss import mean_absolute_error
-from chainer import link
-from chainer import reporter
+import torch.nn as nn
 
 from .classifier import Classifier
 
@@ -68,8 +63,8 @@ class Regressor(Classifier):
     """
 
     def __init__(self, predictor,
-                 lossfun=mean_squared_error.mean_squared_error,
-                 accfun=mean_absolute_error.mean_absolute_error,
+                 lossfun=nn.MSELoss(reduction='mean'),
+                 accfun=nn.L1Loss(reduction='mean'),
                  activation=None,
                  x_keys=(0), t_keys=(-1)):
 

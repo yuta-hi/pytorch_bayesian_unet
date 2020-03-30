@@ -1,12 +1,22 @@
 from __future__ import absolute_import
 
-import chainer
-from chainer import configuration
-from chainer.functions.evaluation import accuracy
-from chainer.functions.loss import softmax_cross_entropy
-from chainer import link
-from chainer import reporter
+import torch
+import torch.nn as nn
+from pytorch_trainer import reporter
 from functools import partial
+
+def softmax_cross_entropy(y, t):
+    import torch.nn.functional as F
+    log_p = F.log_softmax(y, dim=1)
+    loss = F.nll_loss(log_p, t, reduction='sum')
+    return loss
+
+
+def accuracy(y, t):
+    pred = y.argmax(1).reshape(t.shape)
+    acc = (pred == t).mean(dtype=y.dtype)
+    return acc
+
 
 def _get_value(args, kwargs, key):
 
@@ -39,7 +49,7 @@ def get_values(args, kwargs, keys):
     return getter(key=keys)
 
 
-class Classifier(link.Chain):
+class Classifier(nn.Module):
 
     """A simple classifier model.
     This is an example of chain that wraps another chain. It computes the
@@ -114,8 +124,8 @@ class Classifier(link.Chain):
     """
 
     def __init__(self, predictor,
-                 lossfun=softmax_cross_entropy.softmax_cross_entropy,
-                 accfun=accuracy.accuracy,
+                 lossfun=nn.CrossEntropyLoss(reduction='mean'),
+                 accfun=accuracy,
                  activation=None,
                  x_keys=(0), t_keys=(-1)):
 
@@ -130,8 +140,7 @@ class Classifier(link.Chain):
             assert callable(activation), 'activation should be callable..'
 
 
-        with self.init_scope():
-            self.predictor = predictor
+        self.add_module('predictor', predictor)
 
         self.lossfun = lossfun
         self.accfun = accfun
@@ -207,7 +216,7 @@ class Classifier(link.Chain):
             self.accuracy = self.accfun(y, t)
             reporter.report({'accuracy': self.accuracy}, self)
 
-        if configuration.config.train:
+        if self.training:
 
             if self.loss is None:
                 raise ValueError('loss is None..')
