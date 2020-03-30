@@ -1,8 +1,7 @@
 from __future__ import absolute_import
 
 import numpy as np
-from chainer.backends import cuda
-from chainer import initializer
+import torch
 
 
 def _kernel_center(ksize):
@@ -72,28 +71,25 @@ def _bilinear_kernel_nd(ksize, dtype=np.float32):
     return kernel.astype(dtype)
 
 
-class BilinearUpsample(initializer.Initializer):
+def bilinear_upsample(tensor, gain=1.):
     """ Initializer of Bilinear upsampling kernel for convolutional weights.
     See also: https://arxiv.org/pdf/1411.4038.pdf
     """
+    shape = list(tensor.shape)
 
-    def __init__(self, scale=1., dtype=None):
-        self.scale = scale
-        super(BilinearUpsample, self).__init__(dtype)
+    dtype = tensor.dtype
+    device = tensor.device
 
-    def __call__(self, array):
-        if self.dtype is None:
-            dtype = array.dtype
+    if shape[0] != shape[1]:
+        raise ValueError(
+            'The number of input and output channels are NOT same..')
 
-        if array.shape[0] != array.shape[1]:
-            raise ValueError(
-                'The number of input and output channels are NOT same..')
+    with torch.no_grad():
 
-        ksize = array.shape[2:]
-        kernel = self.scale * _bilinear_kernel_nd(ksize, dtype)
+        ksize = shape[2:]
+        kernel = gain * _bilinear_kernel_nd(ksize)
 
-        weight = np.zeros(array.shape, dtype=self.dtype)
-        weight[range(array.shape[0]), range(array.shape[1]), ...] = kernel
+        weight = np.zeros(shape)
+        weight[range(shape[0]), range(shape[1]), ...] = kernel
 
-        xp = cuda.get_array_module(array)
-        array[...] = xp.asarray(weight)
+        tensor[...] = torch.as_tensor(weight, dtype=dtype, device=device)
