@@ -1,8 +1,8 @@
 # BCNNs
 
-This is Chainer implementation for Bayesian Convolutional Neural Networks.
+This is PyTorch re-implementation for Bayesian Convolutional Neural Networks.
 
-(Keras re-impremitation is also available: [keras_bayesian_unet](https://github.com/yuta-hi/keras_bayesian_unet))
+(Chainer implementation is available: [bayesian_unet](https://github.com/yuta-hi/bayesian_unet))
 
 In this project, we assume the following two scenarios, especially for medical imaging.
 1. Two-dimensional segmentation / regression with the 2D U-Net.  (e.g., 2D x-ray, laparoscopic images, and CT slices)
@@ -40,16 +40,23 @@ This is a part of following works.
 ## Requirements
 - Python 3
 - CPU or NVIDIA GPU + CUDA CuDNN
-- Chainer 6.5
+- PyTorch 1.4
 
 ## Getting started
 ### Installation
-- Install Chainer and dependencies from https://chainer.org/
+- Install PyTorch and dependencies from https://pytorch.org/
+- Install Pytorch Trainer
+```bash
+git clone https://github.com/yuta-hi/pytorch-trainer
+cd pytorch-trainer
+python setup.py install
+```
+
 - For other requirements, see [requirements.txt](requirements.txt).
 - Install from this repository
 ```bash
-git clone https://github.com/yuta-hi/bayesian_unet
-cd bayesian_unet
+git clone https://github.com/yuta-hi/pytorch_bayesian_unet
+cd pytorch_bayesian_unet
 python setup.py install
 ```
 
@@ -115,7 +122,6 @@ And, spectral normalization [T. Miyato et al.] is applied to the patch discrimin
 ```bash
 cd examples/map_synthesis
 python preprocess.py # download and normalize the dataset
-python train_and_test_baseline.py --out logs/baseline
 python train_and_test_pix2pix.py --out logs/pix2pix
 ```
 Note that this is under construction.
@@ -146,7 +152,7 @@ PNG, JPG, BMP and meta image format (MHD, MHA) are supported.
 
 - [case #1] 2D images
 ```python
-from chainer_bcnn.datasets import ImageDataset
+from pytorch_bcnn.datasets import ImageDataset
 
 data_root = './data'
 patients = ['ID0', 'ID1', 'ID2'] # NOTE: 3 patients
@@ -157,7 +163,7 @@ normalizer = None # NOTE: please set if you have..
 
 dtypes = OrderedDict({
     'image': np.float32,
-    'label': np.int32, # NOTE: if categorical label
+    'label': np.int64, # NOTE: if categorical label
 #    'mask': np.uint8, # NOTE: please set if you have..
 })
 
@@ -173,7 +179,7 @@ dataset = ImageDataset(data_root, patients, classes=class_list,
 ```
 - [case #2] 3D volumes
 ```python
-from chainer_bcnn.datasets import VolumeDataset
+from pytorch_bcnn.datasets import VolumeDataset
 
 ...
 
@@ -183,7 +189,7 @@ dataset = VolumeDataset(data_root, patients, classes=class_list,
 
 - [case #3] Custom dataset
 ```python
-from chainer_bcnn.datasets import BaseDataset
+from pytorch_bcnn.datasets import BaseDataset
 
 class CustomDataset(BaseDataset):
 
@@ -197,9 +203,9 @@ class CustomDataset(BaseDataset):
 You can use the data augmentor based on geometric transformation, which has stochastic behavior.
 
 ```python
-from chainer_bcnn.data.augmentor import DataAugmentor
-from chainer_bcnn.data.augmentor import Crop2D, Flip2D, Affine2D
-from chainer_bcnn.data.augmentor import Crop3D, Flip3D, Affine3D
+from pytorch_bcnn.data.augmentor import DataAugmentor
+from pytorch_bcnn.data.augmentor import Crop2D, Flip2D, Affine2D
+from pytorch_bcnn.data.augmentor import Crop3D, Flip3D, Affine3D
 
 augmentor = DataAugmentor()
 augmentor.add(Crop2D(size=(300,400)))
@@ -221,9 +227,9 @@ You can use the data normalizer based on intensity transformation.
 
 ```python
 
-from chainer_bcnn.data.normalizer import Normalizer
-from chainer_bcnn.data.normalizer import Clip2D, Subtract2D, Divide2D, Quantize2D
-from chainer_bcnn.data.normalizer import Clip3D, Subtract3D, Divide3D, Quantize3D
+from pytorch_bcnn.data.normalizer import Normalizer
+from pytorch_bcnn.data.normalizer import Clip2D, Subtract2D, Divide2D, Quantize2D
+from pytorch_bcnn.data.normalizer import Clip3D, Subtract3D, Divide3D, Quantize3D
 
 normalizer = Normalizer()
 normalizer.add(Clip2D((-150, 350)))
@@ -244,9 +250,10 @@ normalizer.summary('norm.json')
 - [case #1] Segmentation
 
 ```python
-from chainer_bcnn.models import BayesianUNet
-from chainer_bcnn.links import Classifier
+from pytorch_bcnn.models import BayesianUNet
+from pytorch_bcnn.links import Classifier
 predictor = BayesianUNet(ndim=2,
+                         in_channels=1,
                          out_channels=3,
                          nlayer=5,
                          nfilter=32)
@@ -261,12 +268,12 @@ model = Classifier(predictor,
 
 - [case #2] Regression
 ```python
-from chainer_bcnn.links import Regressor
-from chainer_bcnn.functions.loss import sigmoid_soft_cross_entropy
-from chainer.functions import mean_squared_error
+from pytorch_bcnn.links import Regressor
+from pytorch_bcnn.functions.loss import sigmoid_soft_cross_entropy
+from torch.nn.functional as F
 ...
 
-lossfun = mean_squared_error
+lossfun = F.mse_loss
 # lossfun = sigmoid_soft_cross_entropy # NOTE: if you want..
 
 model = Regressor(predictor,
@@ -275,12 +282,13 @@ model = Regressor(predictor,
 
 - [case #3] Other problems (e.g., multi-task)
 ```python
-from chainer_bcnn.models import UNetBase
+from pytorch_bcnn.models import UNetBase
 
 class MultiTaskUNet(UNetBase):
 
     def __init__(self,
                  ndim,
+                 in_channels,
                  foo, # TODO
                  bar, # TODO
                  nfilter=32,
@@ -295,6 +303,7 @@ class MultiTaskUNet(UNetBase):
                 ):
         super(UNet, self).__init__(
                                 ndim,
+                                in_channels,
                                 nfilter,
                                 nlayer,
                                 conv_param,
@@ -307,8 +316,7 @@ class MultiTaskUNet(UNetBase):
         self._foo = foo
         self._bar = bar
 
-        with self.init_scope():
-            pass # TODO: foo, bar
+        pass # TODO: foo, bar
 
     def forward(self, x):
         h = super().forward(x)
@@ -321,7 +329,7 @@ class MultiTaskUNet(UNetBase):
 - [case #1] 2D segmentation
 ```python
 
-from chainer_bcnn.visualizer import ImageVisualizer
+from pytorch_bcnn.visualizer import ImageVisualizer
 
 transforms = {
     'x': lambda x: x,
@@ -353,7 +361,7 @@ visualizer = ImageVisualizer(transforms=transforms,
 
 - [case #2] 2D regression
 ```python
-from chainer_bcnn.visualizer import ImageVisualizer
+from pytorch_bcnn.visualizer import ImageVisualizer
 import matplotlib.pyplot as plt
 
 def alpha_blend(heatmaps, cmap='jet'):
@@ -372,7 +380,7 @@ def alpha_blend(heatmaps, cmap='jet'):
 
 transforms = {
     'x': None,
-    'y': lambda x: alpha_blend(F.sigmoid(x).data),
+    'y': lambda x: alpha_blend(sigmoid(x)),
     't': lambda x: alpha_blend(x),
 }
 
@@ -392,7 +400,7 @@ To visualize 3D volumes, you can pass the volume renderer to the `transforms` as
 
 ### <a name="validator"></a>Setup validator
 ```python
-from chainer_bcnn.extensions import Validator
+from pytorch_bcnn.extensions import Validator
 
 ...
 
@@ -402,7 +410,7 @@ n_vis = 20 # NOTE: number of samples for visualization
 
 trainer.extend(Validator(valid_iter, model, valid_file,
                             visualizer=visualizer, n_vis=n_vis,
-                            device=gpu_id))
+                            device=device))
 ```
 
 ### <a name="inferencer"></a>Setup inferencer
@@ -410,19 +418,19 @@ trainer.extend(Validator(valid_iter, model, valid_file,
 - [case #1] Segmentation / Classification
 
 ```python
-from chainer_bcnn.links import MCSampler
-from chainer_bcnn.inference import Inferencer
-import chainer.functions as F
+from pytorch_bcnn.links import MCSampler
+from pytorch_bcnn.inference import Inferencer
+import torch
 
 mc_iteration = 50
 
 model = MCSampler(predictor, # NOTE: e.g., BayesianUNet
                     mc_iteration=mc_iteration,
-                    activation=partial(F.softmax, axis=1),
-                    reduce_mean=partial(F.argmax, axis=1),
-                    reduce_var=partial(F.mean, axis=1))
+                    activation=partial(torch.softmax, dim=1),
+                    reduce_mean=partial(torch.argmax, dim=1),
+                    reduce_var=partial(torch.mean, dim=1))
 
-infer = Inferencer(test_iter, model, device=gpu_id)
+infer = Inferencer(test_iter, model, device=device)
 
 estimated_labels, predicted_variances = infer.run()
 ```
