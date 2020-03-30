@@ -5,8 +5,6 @@ import cv2
 import numpy as np
 from matplotlib import cm
 from functools import partial
-from chainer.variable import Variable
-from chainer.backends import cuda
 
 from . import Visualizer
 from ..inference.inferencer import _variable_to_array
