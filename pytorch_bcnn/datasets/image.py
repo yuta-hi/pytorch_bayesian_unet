@@ -5,6 +5,7 @@ from collections import OrderedDict
 from inspect import signature
 
 from . import BaseDataset
+from . import convert_to_tensor
 from ..data import load_image
 
 _supported_filetypes = [
@@ -139,6 +140,7 @@ class ImageDataset(BaseDataset):
 
         return images, spacings
 
+    @convert_to_tensor
     def get_example(self, i):
 
         # load

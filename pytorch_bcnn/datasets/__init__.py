@@ -1,7 +1,8 @@
 from __future__ import absolute_import
 
 import numpy as np
-import chainer
+from pytorch_trainer.dataset import DatasetMixin
+from pytorch_trainer.dataset import convert_to_tensor
 import tqdm
 import glob
 import warnings
@@ -10,7 +11,7 @@ from collections import OrderedDict
 
 from ..data import load_image  # NOQA
 
-class BaseDataset(chainer.dataset.DatasetMixin, metaclass=ABCMeta):
+class BaseDataset(DatasetMixin, metaclass=ABCMeta):
     """ Base class of dataset
 
     Args:
@@ -123,6 +124,7 @@ class BaseDataset(chainer.dataset.DatasetMixin, metaclass=ABCMeta):
 
     @classmethod
     @abstractmethod
+    @convert_to_tensor
     def get_example(self, i):
         raise NotImplementedError()
 
