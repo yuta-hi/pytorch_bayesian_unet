@@ -6,19 +6,22 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-import chainer
-import chainer.functions as F
-import chainer.links as L
-from chainer import training
-from chainer.training import extensions
 from chainer.datasets import get_mnist
-from chainer_bcnn.functions import mc_dropout
-from chainer_bcnn.links import Classifier
-from chainer_bcnn.links import MCSampler
-from chainer_bcnn.inference import Inferencer
-from chainer_bcnn.utils import fixed_seed
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pytorch_bcnn.links.noise import MCDropout
+from pytorch_bcnn.links import Classifier
+from pytorch_bcnn.links import MCSampler
+from pytorch_bcnn.inference import Inferencer
+from pytorch_bcnn.utils import fixed_seed
+from pytorch_trainer import iterators
+from pytorch_trainer import dataset
+from pytorch_trainer import training
+from pytorch_trainer.training import extensions
 
-class Dataset(chainer.dataset.DatasetMixin):
+
+class Dataset(dataset.DatasetMixin):
 
     def __init__(self, phase, indices=None, withlabel=True, ndim=3, scale=1.,
                  dtype=np.float32, label_dtype=np.int32, rgb_format=False):
@@ -75,47 +78,67 @@ class Dataset(chainer.dataset.DatasetMixin):
     def __len__(self):
         return len(self._indices)
 
+    @dataset.convert_to_tensor
     def get_example(self, i):
 
         if self._labels is None:
             return self._images[i]
 
-        return self._images[i], self._labels[i]
+        return self._images[i], int(self._labels[i])
 
 
-class BayesianConvNet(chainer.Chain):
+class BayesianConvNet(nn.Module):
+
+    _in_size = (1, 28, 28)
 
     def __init__(self,
+                 n_in=1,
                  conv_size=3, n_filter=32,
                  pool_size=5,
                  n_units=128, n_out=10):
         super(BayesianConvNet, self).__init__()
 
+        self._n_in = n_in
         self._n_filter = n_filter
         self._conv_size = conv_size
         self._pool_size = pool_size
         self._n_units = n_units
         self._n_out = n_out
 
-        initialW = chainer.initializers.HeNormal()
+        padding = (conv_size-1) // 2
 
-        with self.init_scope():
+        self.conv_1 = nn.Conv2d(n_in, n_filter, conv_size, padding=padding)
+        self.conv_2 = nn.Conv2d(n_filter, n_filter, conv_size, padding=padding)
 
-            self.conv_1 = L.Convolution2D(None, n_filter, conv_size, initialW=initialW)
-            self.conv_2 = L.Convolution2D(None, n_filter, conv_size, initialW=initialW)
+        _h_size = self._in_size[0] * n_filter * \
+                        (self._in_size[1]//pool_size) * (self._in_size[2]//pool_size)
 
-            self.l1 = L.Linear(None, n_units, initialW=initialW)
-            self.l2 = L.Linear(None, n_out, initialW=initialW)
+        self.l1 = nn.Linear(_h_size, n_units)
+        self.l2 = nn.Linear(n_units, n_out)
+
+        self.dropout1 = MCDropout(0.25)
+        self.dropout2 = MCDropout(0.5)
+
+        self._initialize_params()
+
+    def _initialize_params(self):
+        initialW = nn.init.kaiming_normal_
+        initialW(self.conv_1.weight)
+        initialW(self.conv_2.weight)
+        initialW(self.l1.weight)
+        initialW(self.l2.weight)
 
     def forward(self, x):
 
         h = F.relu(self.conv_1(x))
         h = F.relu(self.conv_2(h))
-        h = F.max_pooling_2d(h, self._pool_size)
-        h = mc_dropout(h, 0.25)
+        h = F.max_pool2d(h, self._pool_size)
+        h = self.dropout1(h)
+
+        h = torch.flatten(h, 1)
 
         h = F.relu(self.l1(h))
-        h = mc_dropout(h, 0.5)
+        h = self.dropout2(h)
         h = self.l2(h)
 
         return h
@@ -124,29 +147,27 @@ class BayesianConvNet(chainer.Chain):
 def train_phase(predictor, train, valid, args):
 
     # setup iterators
-    train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
-    valid_iter = chainer.iterators.SerialIterator(valid, args.batchsize, repeat=False, shuffle=False)
+    train_iter = iterators.SerialIterator(train, args.batchsize)
+    valid_iter = iterators.SerialIterator(valid, args.batchsize, repeat=False, shuffle=False)
+
+    # setup a model
+    device = torch.device(args.gpu)
 
     model = Classifier(predictor)
-
-    if args.gpu >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu).use()
-        model.to_gpu()
+    model.to(device)
 
     # setup an optimizer
-    optimizer = chainer.optimizers.Adam()
-    optimizer.setup(model)
-    if args.decay > 0:
-        optimizer.add_hook(chainer.optimizer_hooks.WeightDecay(args.decay))
+    optimizer = torch.optim.Adam(model.parameters(),
+                                 weight_decay=max(args.decay, 0))
 
     # setup a trainer
     updater = training.updaters.StandardUpdater(
-        train_iter, optimizer, device=args.gpu)
+        train_iter, optimizer, model, device=device)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     trainer.extend(extensions.Evaluator(valid_iter, model, device=args.gpu))
 
-    trainer.extend(extensions.dump_graph('main/loss'))
+    # trainer.extend(DumpGraph(model, 'main/loss'))
 
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
     trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
@@ -169,30 +190,29 @@ def train_phase(predictor, train, valid, args):
     trainer.extend(extensions.ProgressBar())
 
     if args.resume:
-        chainer.serializers.load_npz(args.resume, trainer)
+        trainer.load_state_dict(torch.load(args.resume))
 
     trainer.run()
 
-    chainer.serializers.save_npz(os.path.join(args.out, 'predictor.npz'), predictor)
+    torch.save(predictor.state_dict(), os.path.join(args.out, 'predictor.pth'))
 
 
 def test_phase(predictor, test, args):
 
     # setup an iterator
-    test_iter = chainer.iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
+    test_iter = iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
 
     # setup an inferencer
-    chainer.serializers.load_npz(os.path.join(args.out, 'predictor.npz'), predictor)
+    predictor.load_state_dict(torch.load(os.path.join(args.out, 'predictor.pth')))
 
     model = MCSampler(predictor,
                       mc_iteration=args.mc_iteration,
-                      activation=partial(F.softmax, axis=1),
-                      reduce_mean=partial(F.argmax, axis=1),
-                      reduce_var=partial(F.mean, axis=1))
+                      activation=partial(torch.softmax, dim=1),
+                      reduce_mean=partial(torch.argmax, dim=1),
+                      reduce_var=partial(torch.mean, dim=1))
 
-    if args.gpu >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu).use()
-        model.to_gpu()
+    device = torch.device(args.gpu)
+    model.to(device)
 
     infer = Inferencer(test_iter, model, device=args.gpu)
 

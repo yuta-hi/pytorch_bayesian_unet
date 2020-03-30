@@ -5,18 +5,21 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-import chainer
-import chainer.functions as F
-import chainer.links as L
-from chainer import training
-from chainer.training import extensions
-from chainer_bcnn.functions import mc_dropout
-from chainer_bcnn.links import Regressor
-from chainer_bcnn.links import MCSampler
-from chainer_bcnn.inference import Inferencer
-from chainer_bcnn.utils import fixed_seed
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pytorch_bcnn.links.noise import MCDropout
+from pytorch_bcnn.links import Regressor
+from pytorch_bcnn.links import MCSampler
+from pytorch_bcnn.inference import Inferencer
+from pytorch_bcnn.utils import fixed_seed
+from pytorch_trainer import iterators
+from pytorch_trainer import dataset
+from pytorch_trainer import training
+from pytorch_trainer.training import extensions
 
-class Dataset(chainer.dataset.DatasetMixin):
+
+class Dataset(dataset.DatasetMixin):
 
     def __init__(self,
                  func=lambda x: x*np.sin(x),
@@ -51,29 +54,32 @@ class Dataset(chainer.dataset.DatasetMixin):
     def __len__(self):
         return len(self._x)
 
+    @dataset.convert_to_tensor
     def get_example(self, i):
         return self.x[i], self.y[i]
 
 
-class BayesianMLP(chainer.Chain):
+class BayesianMLP(nn.Module):
 
-    def __init__(self, n_units, n_out, drop_ratio):
+    def __init__(self, n_in, n_units, n_out, drop_ratio):
         super(BayesianMLP, self).__init__()
 
+        self.n_in = n_in
         self.n_units = n_units
         self.n_out = n_out
         self.drop_ratio = drop_ratio
 
-        with self.init_scope():
-            self.l1 = L.Linear(None, n_units)
-            self.l2 = L.Linear(None, n_units)
-            self.l3 = L.Linear(None, n_out)
+        self.l1 = nn.Linear(n_in, n_units)
+        self.l2 = nn.Linear(n_units, n_units)
+        self.l3 = nn.Linear(n_units, n_out)
+
+        self.dropout = MCDropout(drop_ratio)
 
     def forward(self, x):
         h = F.relu(self.l1(x))
-        h = mc_dropout(h, self.drop_ratio)
+        h = self.dropout(h)
         h = F.relu(self.l2(h))
-        h = mc_dropout(h, self.drop_ratio)
+        h = self.dropout(h)
         return self.l3(h)
 
 
@@ -95,30 +101,27 @@ def train_phase(predictor, train, valid, args):
     plt.close()
 
     # setup iterators
-    train_iter = chainer.iterators.SerialIterator(train, args.batchsize, shuffle=True)
-    valid_iter = chainer.iterators.SerialIterator(valid, args.batchsize, repeat=False, shuffle=False)
+    train_iter = iterators.SerialIterator(train, args.batchsize, shuffle=True)
+    valid_iter = iterators.SerialIterator(valid, args.batchsize, repeat=False, shuffle=False)
 
     # setup a model
-    model = Regressor(predictor)
+    device = torch.device(args.gpu)
 
-    if args.gpu >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu).use()
-        model.to_gpu()
+    model = Regressor(predictor)
+    model.to(device)
 
     # setup an optimizer
-    optimizer = chainer.optimizers.Adam()
-    optimizer.setup(model)
-    if args.decay > 0:
-        optimizer.add_hook(chainer.optimizer_hooks.WeightDecay(args.decay))
+    optimizer = torch.optim.Adam(model.parameters(),
+                                 weight_decay=max(args.decay, 0))
 
     # setup a trainer
     updater = training.updaters.StandardUpdater(
-        train_iter, optimizer, device=args.gpu)
+        train_iter, optimizer, model, device=device)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     trainer.extend(extensions.Evaluator(valid_iter, model, device=args.gpu))
 
-    trainer.extend(extensions.dump_graph('main/loss'))
+    # trainer.extend(DumpGraph(model, 'main/loss'))
 
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
     trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
@@ -141,20 +144,20 @@ def train_phase(predictor, train, valid, args):
     trainer.extend(extensions.ProgressBar())
 
     if args.resume:
-        chainer.serializers.load_npz(args.resume, trainer)
+        trainer.load_state_dict(torch.load(args.resume))
 
     trainer.run()
 
-    chainer.serializers.save_npz(os.path.join(args.out, 'predictor.npz'), predictor)
+    torch.save(predictor.state_dict(), os.path.join(args.out, 'predictor.pth'))
 
 
 def test_phase(predictor, test, args):
 
     # setup an iterator
-    test_iter = chainer.iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
+    test_iter = iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
 
     # setup an inferencer
-    chainer.serializers.load_npz(os.path.join(args.out, 'predictor.npz'), predictor)
+    predictor.load_state_dict(torch.load(os.path.join(args.out, 'predictor.pth')))
 
     model = MCSampler(predictor,
                       mc_iteration=args.mc_iteration,
@@ -162,9 +165,8 @@ def test_phase(predictor, test, args):
                       reduce_mean=None,
                       reduce_var=None)
 
-    if args.gpu >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu).use()
-        model.to_gpu()
+    device = torch.device(args.gpu)
+    model.to(device)
 
     infer = Inferencer(test_iter, model, device=args.gpu)
 
@@ -201,8 +203,8 @@ def main():
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--frequency', '-f', type=int, default=-1,
                         help='Frequency of taking a snapshot')
-    parser.add_argument('--gpu', '-g', type=int, default=0,
-                        help='GPU ID (negative value indicates CPU)')
+    parser.add_argument('--gpu', '-g', type=str, default='cuda:0',
+                        help='GPU Device')
     parser.add_argument('--out', '-o', default='logs',
                         help='Directory to output the log files')
     parser.add_argument('--resume', '-r', default='',
@@ -229,7 +231,7 @@ def main():
     with fixed_seed(args.seed, strict=False):
 
         # setup a predictor
-        predictor = BayesianMLP(n_units=args.unit, n_out=1, drop_ratio=0.1)
+        predictor = BayesianMLP(n_in=1, n_units=args.unit, n_out=1, drop_ratio=0.1)
 
         # setup dataset
         train = Dataset(x_lim=(-5, 5), n_samples=1000)

@@ -7,7 +7,7 @@ except ImportError:
     from distutils.core import setup
 
 setup(
-    name='chainer_bcnn',
+    name='pytorch_bcnn',
     version='1.1.0',
     description='Bayesian Convolutional Neural Networks',
     long_description=open('README.md').read(),
@@ -16,7 +16,7 @@ setup(
     include_package_data=True,
     scripts=[],
     install_requires=open('requirements.txt').readlines(),
-    url='https://github.com/yuta-hi/bayesian_unet',
+    url='https://github.com/yuta-hi/pytorch_bayesian_unet',
     license='MIT',
     classifiers=[
         'Programming Language :: Python :: 3',

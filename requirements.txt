@@ -12,6 +12,5 @@ openpyxl
 matplotlib==3.0.3
 seaborn
 tensorboardX
-cupy==6.5.0
-chainer==6.5.0
-chainerui
+torch
+pytorch-trainer

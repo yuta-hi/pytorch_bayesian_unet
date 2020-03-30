@@ -4,35 +4,37 @@ import random
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import numpy as np
-import cupy as cp
 from functools import partial
 from collections import OrderedDict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-import chainer
-from chainer import training
-from chainer.training import extensions
-from chainer.training import triggers
-import chainer.functions as F
-from chainer.functions import softmax_cross_entropy
-from chainerui.utils import save_args
-from chainer_bcnn.datasets import ImageDataset
-from chainer_bcnn.data.augmentor import DataAugmentor, Flip2D, Affine2D
-from chainer_bcnn.data.normalizer import Normalizer, Clip2D, Subtract2D, Divide2D
-from chainer_bcnn.models import BayesianUNet
-from chainer_bcnn.links import Classifier
-from chainer_bcnn.extensions import LogReport
-from chainer_bcnn.extensions import PrintReport
-from chainer_bcnn.extensions import Validator
-from chainer_bcnn.visualizer import ImageVisualizer
-from chainer_bcnn.links import MCSampler
-from chainer_bcnn.inference import Inferencer
-from chainer_bcnn.data import load_image, save_image
-from chainer_bcnn.datasets import train_valid_split
-from chainer_bcnn.utils import fixed_seed
-from chainer_bcnn.utils import find_latest_snapshot
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pytorch_bcnn.datasets import ImageDataset
+from pytorch_bcnn.data.augmentor import DataAugmentor, Flip2D, Affine2D
+from pytorch_bcnn.data.normalizer import Normalizer, Clip2D, Subtract2D, Divide2D
+from pytorch_bcnn.models import BayesianUNet
+from pytorch_bcnn.links import Classifier
+from pytorch_bcnn.links import MCSampler
+from pytorch_bcnn.functions.loss import softmax_cross_entropy
+from pytorch_bcnn.inference import Inferencer
+from pytorch_bcnn.visualizer import ImageVisualizer
+from pytorch_bcnn.data import load_image, save_image
+from pytorch_bcnn.datasets import train_valid_split
+from pytorch_bcnn.extensions import LogReport
+from pytorch_bcnn.extensions import PrintReport
+from pytorch_bcnn.extensions import Validator
+from pytorch_bcnn.utils import save_args
+from pytorch_bcnn.utils import fixed_seed
+from pytorch_bcnn.utils import find_latest_snapshot
+from pytorch_trainer import iterators
+from pytorch_trainer import dataset
+from pytorch_trainer import training
+from pytorch_trainer.training import extensions
+from pytorch_trainer.training import triggers
 from scipy.stats import pearsonr
 
 def eval_metric(y, t):
@@ -51,10 +53,8 @@ def train_phase(predictor, train, valid, args):
     print('-- valid:', len(valid))
 
     # setup dataset iterators
-    train_batchsize = min(args.batchsize*len(args.gpu), len(train))
-    valid_batchsize = args.batchsize
-    train_iter = chainer.iterators.MultiprocessIterator(train, train_batchsize)
-    valid_iter = chainer.iterators.SerialIterator(valid, valid_batchsize,
+    train_iter = iterators.MultiprocessIterator(train, args.batchsize)
+    valid_iter = iterators.SerialIterator(valid, args.batchsize,
                                                 repeat=False, shuffle=True)
 
     # setup a model
@@ -63,30 +63,21 @@ def train_phase(predictor, train, valid, args):
     lossfun = partial(softmax_cross_entropy,
                       normalize=False, class_weight=class_weight)
 
-    model = Classifier(predictor, lossfun=lossfun)
+    device = torch.device(args.gpu)
 
-    if args.gpu[0] >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu[0]).use()
-        if len(args.gpu) == 1: model.to_gpu()
+    model = Classifier(predictor, lossfun=lossfun)
+    model.to(device)
 
     # setup an optimizer
-    optimizer = chainer.optimizers.Adam(alpha=args.lr, beta1=0.9, beta2=0.999, eps=1e-08, amsgrad=False)
-    optimizer.setup(model)
-    if args.decay > 0:
-        optimizer.add_hook(chainer.optimizer_hooks.WeightDecay(args.decay))
+    optimizer = torch.optim.Adam(model.parameters(),
+                                 lr=args.lr,
+                                 weight_decay=max(args.decay, 0))
 
 
     # setup a trainer
-    if len(args.gpu) == 1:
-        updater = training.updaters.StandardUpdater(
-            train_iter, optimizer, device=args.gpu[0])
-    else:
-        devices = {'main':args.gpu[0]}
-        for idx, g in enumerate(args.gpu[1:]):
-            devices['slave_%d' % idx] = g
-        updater = training.updaters.ParallelUpdater(
-            train_iter, optimizer, devices=devices)
-
+    updater = training.updaters.StandardUpdater(
+        train_iter, optimizer, model, device=device)
+    trainer = training.Trainer(updater, (args.iteration, 'iteration'), out=args.out)
 
     frequency = max(args.iteration//20, 1) if args.frequency == -1 else max(1, args.frequency)
 
@@ -113,14 +104,14 @@ def train_phase(predictor, train, valid, args):
     valid_file = os.path.join('validation', 'iter_{.updater.iteration:08}.png')
     trainer.extend(Validator(valid_iter, model, valid_file,
                              visualizer=visualizer, n_vis=20,
-                             device=args.gpu[0]),
+                             device=args.gpu),
                              trigger=(frequency, 'iteration'))
 
-    trainer.extend(extensions.dump_graph('main/loss'))
+    # trainer.extend(DumpGraph(model, 'main/loss'))
 
-    trainer.extend(extensions.snapshot(filename='snapshot_iter_{.updater.iteration:08}.npz'),
+    trainer.extend(extensions.snapshot(filename='snapshot_iter_{.updater.iteration:08}.pth'),
                                        trigger=(frequency, 'iteration'))
-    trainer.extend(extensions.snapshot_object(predictor, 'predictor_iter_{.updater.iteration:08}.npz'),
+    trainer.extend(extensions.snapshot_object(predictor, 'predictor_iter_{.updater.iteration:08}.pth'),
                                               trigger=(frequency, 'iteration'))
 
     log_keys = ['main/loss', 'validation/main/loss',
@@ -142,7 +133,7 @@ def train_phase(predictor, train, valid, args):
     trainer.extend(extensions.ProgressBar())
 
     if args.resume:
-        chainer.serializers.load_npz(args.resume, trainer)
+        trainer.load_state_dict(torch.load(args.resume))
 
 
     # train
@@ -154,24 +145,24 @@ def test_phase(predictor, test, args):
     print('# samples:')
     print('-- test:', len(test))
 
-    test_iter = chainer.iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
+    test_iter = iterators.SerialIterator(test, args.batchsize, repeat=False, shuffle=False)
 
     # setup a inferencer
-    snapshot_file = find_latest_snapshot('predictor_iter_{.updater.iteration:08}.npz', args.out)
-    chainer.serializers.load_npz(snapshot_file, predictor)
+    snapshot_file = find_latest_snapshot('predictor_iter_{.updater.iteration:08}.pth', args.out)
+    predictor.load_state_dict(torch.load(snapshot_file))
+
     print('Loaded a snapshot:', snapshot_file)
 
     model = MCSampler(predictor,
                       mc_iteration=args.mc_iteration,
-                      activation=partial(F.softmax, axis=1),
-                      reduce_mean=partial(F.argmax, axis=1),
-                      reduce_var=partial(F.mean, axis=1))
+                      activation=partial(torch.softmax, dim=1),
+                      reduce_mean=partial(torch.argmax, dim=1),
+                      reduce_var=partial(torch.mean, dim=1))
 
-    if args.gpu[0] >= 0:
-        chainer.backends.cuda.get_device_from_id(args.gpu[0]).use()
-        model.to_gpu()
+    device = torch.device(args.gpu)
+    model.to(device)
 
-    infer = Inferencer(test_iter, model, device=args.gpu[0])
+    infer = Inferencer(test_iter, model, device=args.gpu)
 
     pred, uncert = infer.run()
 
@@ -247,7 +238,7 @@ def get_dataset(data_root,
                 augmentor=None):
 
     class_list = ['background', 'instrument']
-    dtypes = OrderedDict({'image': np.float32, 'label': np.int32})
+    dtypes = OrderedDict({'image': np.float32, 'label': np.int64})
 
     getter = partial(ImageDataset, root=data_root, classes=class_list,
                         dtypes=dtypes, normalizer=normalizer)
@@ -301,8 +292,8 @@ def main():
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--frequency', '-f', type=int, default=-1,
                         help='Frequency of taking a snapshot')
-    parser.add_argument('--gpu', '-g', type=int, nargs='+', default=[0],
-                        help='GPU ID (negative value indicates CPU)')
+    parser.add_argument('--gpu', '-g', type=str, default='cuda:0',
+                        help='GPU Device')
     parser.add_argument('--out', '-o', default='logs',
                         help='Directory to output the result')
     parser.add_argument('--resume', '-r', default='',
@@ -363,27 +354,29 @@ def main():
 
         # setup a predictor
         conv_param = { # NOTE: you can change layer type if you want..
-            'name':'dilated',
-            'ksize': 3,
+            'name':'conv',
+            'kernel_size': 3,
             'stride': 1,
-            'pad': 2,
-            'dilate': 2,
-            'initialW': {'name': 'he_normal', 'scale': 1.0},
+            'padding': 2,
+            'padding_mode': 'reflect',
+            'dilation': 2,
+            'initialW': {'name': 'he_normal'},
             'initial_bias': {'name': 'zero'},
         }
 
         upconv_param = { # NOTE: you can change layer type if you want..
             'name':'deconv',
-            'ksize': 3,
+            'kernel_size': 3,
             'stride': 2,
-            'pad': 0,
-            'initialW': {'name': 'bilinear', 'scale': 1.0},
+            'padding': 0,
+            'initialW': {'name': 'bilinear'},
             'initial_bias': {'name': 'zero'},
         }
 
         norm_param = {'name': 'batch'}
 
         predictor = BayesianUNet(ndim=2,
+                                 in_channels=3,
                                  out_channels=2,
                                  nlayer=4,
                                  nfilter=32,

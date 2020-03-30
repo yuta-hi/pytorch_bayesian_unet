@@ -1,6 +1,7 @@
 import numpy as np
-from chainer_bcnn.visualizer import ImageVisualizer
-from chainer_bcnn.visualizer.image import _default_cmap
+import torch
+from pytorch_bcnn.visualizer import ImageVisualizer
+from pytorch_bcnn.visualizer.image import _default_cmap
 
 
 def test_classification_sparse():
@@ -25,9 +26,9 @@ def test_classification_sparse():
                                  cmaps=_categorical_cmaps,
                                  clims=_categorical_clims)
 
-    x = np.random.rand(3, 100, 200)
-    y = np.random.randint(0, 10, (100, 200))
-    t = np.random.randint(0, 10, (100, 200))
+    x = torch.as_tensor(np.random.rand(3, 100, 200))
+    y = torch.as_tensor(np.random.randint(0, 10, (100, 200)))
+    t = torch.as_tensor(np.random.randint(0, 10, (100, 200)))
 
     for _ in range(3):
         visualizer.add_example(x, y, t)
@@ -56,9 +57,9 @@ def test_classification():
                                  cmaps=_categorical_cmaps,
                                  clims=_categorical_clims)
 
-    x = np.random.rand(3, 100, 200)
-    y = np.random.rand(10, 100, 200)
-    t = np.random.rand(10, 100, 200)
+    x = torch.as_tensor(np.random.rand(3, 100, 200))
+    y = torch.as_tensor(np.random.rand(10, 100, 200))
+    t = torch.as_tensor(np.random.rand(10, 100, 200))
 
     for _ in range(3):
         visualizer.add_example(x, y, t)
@@ -81,9 +82,9 @@ def test_regression():
                                  cmaps=_regression_cmaps,
                                  clims=_regression_clims)
 
-    x = np.random.rand(3, 100, 200)
-    y = np.random.rand(5, 100, 200)
-    t = np.random.rand(5, 100, 200)
+    x = torch.as_tensor(np.random.rand(3, 100, 200))
+    y = torch.as_tensor(np.random.rand(5, 100, 200))
+    t = torch.as_tensor(np.random.rand(5, 100, 200))
 
     for _ in range(3):
         visualizer.add_example(x, y, t)
